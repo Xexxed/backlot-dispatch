@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Change log</h1>
+{% if published %}
+<div class="panel">
+  <p><strong>Live plan:</strong> {{ published.id }} · <span class="chip">{{ published.status }}</span></p>
+  <table>
+    <tr><th>Scene</th><th>Kind</th><th>Rule</th><th>Reason</th></tr>
+    {% for c in published.changes %}
+    <tr><td>{{ c.scene_id or '—' }}</td><td>{{ c.kind }}</td>
+        <td><span class="chip">{{ c.rule_id }}</span></td>
+        <td style="white-space:normal">{{ c.reason }}</td></tr>
+    {% endfor %}
+  </table>
+  <p><a href="/plans/{{ published.id }}">Full diff view →</a></p>
+</div>
+{% else %}
+<p class="muted">Nothing published yet.</p>
+{% endif %}
+
+<h2>All plans</h2>
+<div class="panel">
+<table>
+  <tr><th>Plan</th><th>Created</th><th>Status</th><th></th></tr>
+  {% for pl in plans %}
+  <tr><td>{{ pl.id }}</td><td>{{ pl.created_at }}</td><td><span class="chip">{{ pl.status }}</span></td>
+      <td><a href="/plans/{{ pl.id }}">open</a></td></tr>
+  {% else %}<tr><td colspan="4" class="muted">No plans yet.</td></tr>{% endfor %}
+</table>
+</div>
+{% endblock %}

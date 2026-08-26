@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Plan review — {{ plan.id }} <span class="chip {{ 'ok' if plan.is_feasible else 'err' }}">{{ 'FEASIBLE' if plan.is_feasible else 'NEEDS ATTENTION' }}</span></h1>
+
+<div class="banner">
+  <strong>What changed &amp; why</strong> <span class="chip">narrator: {{ plan.narration.source if plan.narration else 'template' }}</span>
+  <pre style="white-space:pre-wrap;margin:8px 0 0;font-family:inherit">{{ plan.narration.text if plan.narration else '' }}</pre>
+</div>
+
+<h2>Change log (machine-checkable)</h2>
+<div class="panel">
+<table>
+  <tr><th>Scene</th><th>Kind</th><th>Rule</th><th>Reason</th></tr>
+  {% for c in plan.changes %}
+  <tr>
+    <td>{{ c.scene_id or '—' }}</td>
+    <td><span class="chip">{{ c.kind }}</span></td>
+    <td><span class="chip">{{ c.rule_id }}</span></td>
+    <td style="white-space:normal">{{ c.reason }}</td>
+  </tr>
+  {% else %}<tr><td colspan="4" class="muted">No changes — schedule already compliant.</td></tr>{% endfor %}
+</table>
+</div>
+
+{% if plan.diagnostics %}
+<h2>Diagnostics</h2>
+<div class="panel">
+  {% for d in plan.diagnostics %}
+  <p><span class="chip err">{{ d.rule_id }}</span> {{ d.message }}</p>
+  {% endfor %}
+</div>
+{% endif %}
+
+<h2>Baseline vs proposed</h2>
+<div class="grid two">
+  <div class="panel">
+    <strong>Remaining baseline</strong>
+    <table>
+      <tr><th>Time</th><th>Scene</th><th>Location</th></tr>
+      {% for r in baseline_rows %}
+      <tr class="{{ 'meal' if r.is_meal }}"><td>{{ r.span }}</td><td>{{ r.label }}</td><td>{{ r.location_name or '' }}</td></tr>
+      {% endfor %}
+    </table>
+  </div>
+  <div class="panel">
+    <strong>Proposed</strong>
+    <table>
+      <tr><th>Time</th><th>Scene</th><th>Location</th></tr>
+      {% for r in proposed_rows %}
+      <tr class="{{ 'moved' if r.id in moved_ids }} {{ 'meal' if r.is_meal }}">
+        <td>{{ r.span }}</td><td>{{ r.label }}{% if r.id in moved_ids %} <span class="chip ok">moved</span>{% endif %}</td><td>{{ r.location_name or '' }}</td>
+      </tr>
+      {% endfor %}
+    </table>
+  </div>
+</div>
+
+<section class="panel">
+  {% if plan.status in ('published', 'published_override') %}
+  <p><span class="chip ok">{{ plan.status }}</span> Crew links and QR codes are live.</p>
+  <a class="btn secondary" href="/">← Dashboard</a>
+  {% elif plan.is_feasible %}
+  <form method="post" action="/plans/{{ plan.id }}/publish">
+    <button class="btn" type="submit">Publish to crew →</button>
+  </form>
+  {% else %}
+  <p class="muted">Compliance checks failed — resolve diagnostics before publishing.</p>
+  <form method="post" action="/plans/{{ plan.id }}/publish?acknowledge=1"
+        onsubmit="return confirm('Publish despite violations? This records an override under your AD authority.')">
+    <button class="btn danger" type="submit">Acknowledge violations &amp; publish anyway</button>
+  </form>
+  {% endif %}
+</section>
+{% endblock %}

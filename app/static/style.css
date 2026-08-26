@@ -1,0 +1,85 @@
+/* Backlot Dispatch — mobile-first crew portal theme */
+:root {
+  --bg: #101318;
+  --panel: #1a1f28;
+  --panel-2: #222835;
+  --ink: #e8ecf2;
+  --muted: #9aa5b4;
+  --accent: #ffb454;
+  --accent-2: #4cc2ff;
+  --ok: #3fd08a;
+  --warn: #ff6b6b;
+  --chip: #2c3444;
+  --radius: 12px;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background: var(--bg);
+  color: var(--ink);
+  line-height: 1.45;
+}
+header.site {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 16px; background: var(--panel);
+  border-bottom: 1px solid #000;
+  position: sticky; top: 0; z-index: 5;
+}
+header.site .brand { font-weight: 800; letter-spacing: 0.02em; }
+header.site .brand span { color: var(--accent); }
+nav a { color: var(--muted); text-decoration: none; margin-left: 14px; font-size: 0.92em; }
+nav a:hover { color: var(--ink); }
+main { max-width: 1080px; margin: 0 auto; padding: 16px; }
+h1 { font-size: 1.25rem; margin: 0.6em 0; }
+h2 { font-size: 1.05rem; margin: 1.2em 0 0.5em; color: var(--accent-2); }
+.banner {
+  background: var(--panel); border-left: 4px solid var(--accent);
+  padding: 10px 14px; border-radius: 8px; margin: 12px 0;
+}
+.banner.warn { border-color: var(--warn); }
+.panel {
+  background: var(--panel); border-radius: var(--radius);
+  padding: 14px 16px; margin: 12px 0; overflow-x: auto;
+}
+.grid { display: grid; gap: 12px; }
+@media (min-width: 720px) { .grid.two { grid-template-columns: 1fr 1fr; } }
+table { width: 100%; border-collapse: collapse; font-size: 0.95em; }
+th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid #2a3140; white-space: nowrap; }
+th { color: var(--muted); font-weight: 600; font-size: 0.82em; text-transform: uppercase; }
+tr.meal td { background: #232b38; color: var(--muted); font-style: italic; }
+tr.moved td { background: rgba(255, 180, 84, 0.10); }
+.chip {
+  display: inline-block; background: var(--chip); color: var(--accent);
+  font-family: ui-monospace, monospace; font-size: 0.78em;
+  padding: 2px 8px; border-radius: 999px; margin-right: 6px;
+}
+.chip.err { color: var(--warn); }
+.chip.ok { color: var(--ok); }
+.btn {
+  display: inline-block; background: var(--accent); color: #201503;
+  border: none; padding: 12px 22px; border-radius: 10px;
+  font-size: 1.05rem; font-weight: 700; cursor: pointer; text-decoration: none;
+}
+.btn.secondary { background: var(--chip); color: var(--ink); }
+.btn.danger { background: transparent; color: var(--warn); border: 1px solid var(--warn); }
+.btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.call-card {
+  background: var(--panel); border-radius: var(--radius); padding: 16px;
+  margin: 10px 0;
+}
+.call-time { font-size: 2.4rem; font-weight: 800; color: var(--accent); }
+.call-delta.late { color: var(--warn); }
+.call-delta.early { color: var(--accent-2); }
+.call-delta.same { color: var(--ok); }
+textarea, input, select {
+  width: 100%; background: var(--panel-2); color: var(--ink);
+  border: 1px solid #333c4d; border-radius: 8px; padding: 10px; font-size: 1rem;
+}
+label { display: block; margin-top: 12px; color: var(--muted); font-size: 0.88em; }
+.muted { color: var(--muted); }
+.small { font-size: 0.85em; }
+.qr { width: 120px; height: 120px; background: #fff; padding: 6px; border-radius: 8px; }
+.pill-ok { color: var(--ok); } .pill-no { color: var(--warn); }
+footer.site { text-align: center; color: var(--muted); padding: 24px; font-size: 0.8em; }
+details summary { cursor: pointer; color: var(--accent-2); margin: 8px 0; }

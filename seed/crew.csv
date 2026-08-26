@@ -1,0 +1,41 @@
+crew_id,name,department,role
+CR-01,Yusuf Adeyemi,Camera,DP
+CR-02,Hana Kobayashi,Camera,Operator A
+CR-03,Peter Novak,Camera,Operator B
+CR-04,Grace Mbeki,Camera,1st AC
+CR-05,Leo Fontaine,Camera,2nd AC
+CR-06,Ruth Okello,Camera,DIT
+CR-07,Marco Silveira,Camera,Loader
+GE-01,Dmitri Volkov,G&E,Gaffer
+GE-02,Aisha Karim,G&E,Best Boy Electric
+GE-03,Carl Jensen,G&E,Electrician
+GE-04,Nina Petrova,G&E,Electrician
+GE-05,Owen Brady,G&E,Key Grip
+GE-06,Fatima Zahra,G&E,Best Boy Grip
+GE-07,Paul Osei,G&E,Grip
+GE-08,Ingrid Larsen,G&E,Grip
+GE-09,Tomas Ruiz,G&E,Generator Tech
+SO-01,Evelyn Cho,Sound,Sound Mixer
+SO-02,Marcus Reid,Sound,Boom Operator
+SO-03,Sara Haddad,Sound,Utility Sound
+SO-04,Jonas Weber,Sound,Playback
+SO-05,Mei-Ling Tan,Sound,Sound Utility
+SO-06,Kofi Mensah,Sound,RF Tech
+AR-01,Vivienne Laurent,Art,Production Designer
+AR-02,Diego Fuentes,Art,Set Decorator
+AR-03,Amara Diallo,Art,Set Dresser
+AR-04,Nils Andersen,Art,Props Master
+AR-05,Zoe Papadopoulos,Art,Props Assistant
+AR-06,Hassan Ali,Art,Greensman
+AR-07,Clara Bello,Art,Art PA
+AR-08,Viktor Marek,Art,Swing
+AD-01,Frank Morales,AD/Production,1st AD
+AD-02,Imani Brooks,AD/Production,2nd AD
+AD-03,Sean Gallagher,AD/Production,2nd 2nd AD
+AD-04,Rosa Delacruz,AD/Production,Production Coordinator
+AD-05,Ken Watanabe-Ito,AD/Production,Production Manager
+AD-06,Olivia Grant,AD/Production,Script Supervisor
+AD-07,Andre Botha,AD/Production,Location Manager
+AD-08,Chloe Martin,AD/Production,Set PA
+AD-09,Jamal Wright,AD/Production,Set PA
+AD-10,Petra Kovacs,AD/Production,Transportation Captain

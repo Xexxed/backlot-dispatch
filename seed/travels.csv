@@ -1,0 +1,4 @@
+from_location,to_location,minutes
+L-STAGE4,L-RANCH,40
+L-STAGE4,L-MAINST,25
+L-RANCH,L-MAINST,35

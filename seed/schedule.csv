@@ -1,0 +1,26 @@
+scene_id,title,page_count,location,int_ext,day_night,cast_ids,departments,depends_on
+SC-101,Sunrise over the fields,0.5,L-RANCH,EXT,DAY,C-06,Camera;G&E;Sound;AD/Production,
+SC-102,Delia feeds the horses,1.5,L-RANCH,EXT,DAY,C-01;C-08,Camera;G&E;Sound;AD/Production,
+SC-103,Reed arrives with news,2.0,L-RANCH,EXT,DAY,C-02;C-01,Camera;G&E;Sound;AD/Production,
+SC-104,Argument at the fence,2.5,L-RANCH,EXT,DAY,C-01;C-04,Camera;G&E;Sound;AD/Production,SC-103
+SC-105,June watches from porch,1.0,L-RANCH,EXT,DAY,C-03,Camera;G&E;Sound;AD/Production,
+SC-106,Sheriff's office briefing,2.0,L-STAGE4,INT,DAY,C-02;C-05,Camera;G&E;Sound;AD/Production;Art,
+SC-107,Interrogation begins,3.0,L-STAGE4,INT,DAY,C-02;C-04,Camera;G&E;Sound;AD/Production;Art,SC-106
+SC-108,Mrs. Alvarez pleads,1.5,L-STAGE4,INT,DAY,C-05;C-02,Camera;G&E;Sound;AD/Production;Art,
+SC-109,Evidence board closeups,0.5,L-STAGE4,INT,DAY,,Camera;G&E;Sound;AD/Production;Art,
+SC-110,Delia storms into office,2.0,L-STAGE4,INT,DAY,C-01;C-02,Camera;G&E;Sound;AD/Production;Art,SC-107
+SC-111,Phone call to the capital,1.0,L-STAGE4,INT,DAY,C-03,Camera;G&E;Sound;AD/Production;Art,
+SC-112,Holt signs the confession,1.5,L-STAGE4,INT,NIGHT,C-04;C-02,Camera;G&E;Sound;AD/Production;Art,SC-110
+SC-113,Town square gathering,2.0,L-MAINST,EXT,DAY,C-01;C-02;C-07,Camera;G&E;Sound;AD/Production,
+SC-114,Speech at the fountain,2.5,L-MAINST,EXT,DAY,C-01,Camera;G&E;Sound;AD/Production,SC-113
+SC-115,Crowd reactions,1.0,L-MAINST,EXT,DAY,,Camera;G&E;Sound;AD/Production,
+SC-116,Holt is escorted out,2.0,L-MAINST,EXT,DAY,C-04;C-02,Camera;G&E;Sound;AD/Production,SC-112
+SC-117,Golden hour goodbye,1.5,L-MAINST,EXT,DAY,C-01;C-03,Camera;G&E;Sound;AD/Production,
+SC-118,Neon diner exterior,1.0,L-MAINST,EXT,NIGHT,C-07,Camera;G&E;Sound;AD/Production,
+SC-119,Diner interior confession,3.0,L-STAGE4,INT,NIGHT,C-01;C-07,Camera;G&E;Sound;AD/Production;Art,SC-118
+SC-120,Getaway car peels out,1.0,L-MAINST,EXT,NIGHT,C-04;C-08,Camera;G&E;Sound;AD/Production,
+SC-121,Ranch house at night,1.5,L-RANCH,EXT,NIGHT,C-01;C-03,Camera;G&E;Sound;AD/Production,
+SC-122,Lantern in the barn,1.0,L-RANCH,INT,NIGHT,C-08,Camera;G&E;Sound;AD/Production,
+SC-123,Delia's letter voiceover,0.5,L-STAGE4,INT,NIGHT,C-01,Camera;G&E;Sound;AD/Production;Art,
+SC-124,Main street empty at dawn,0.5,L-MAINST,EXT,DAY,,Camera;G&E;Sound;AD/Production,
+SC-125,Final sunrise,1.0,L-RANCH,EXT,DAY,C-01;C-06,Camera;G&E;Sound;AD/Production,SC-124

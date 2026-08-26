@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Report a disruption</h1>
+{% if fallback_reason %}
+<div class="banner warn">
+  <strong>Intake agent handed off:</strong> {{ fallback_reason }}
+</div>
+{% endif %}
+<form method="post" action="/incident">
+  <label for="free_text">Describe what happened</label>
+  <textarea id="free_text" name="free_text" rows="4">{{ free_text }}</textarea>
+
+  <details {% if fallback_reason %}open{% endif %}>
+    <summary>Confirm / complete details</summary>
+    <div class="grid two">
+      <div>
+        <label>Type</label>
+        <select name="manual_type">
+          <option>LOCATION_BLOCKED</option>
+          <option>EQUIPMENT_FAILURE</option>
+          <option>CAST_DELAY</option>
+          <option>WEATHER</option>
+          <option>OTHER</option>
+        </select>
+        <label>Location</label>
+        <select name="manual_location">
+          <option value="">— none —</option>
+          {% for loc in locations.values() %}
+          <option value="{{ loc.id }}">{{ loc.id }} · {{ loc.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label>Blocked until (HH:MM)</label>
+        <input type="time" name="manual_blocked_until">
+        <label>Severity</label>
+        <select name="manual_severity">
+          <option>low</option><option selected>medium</option><option>high</option>
+        </select>
+        <label>Demo clock “now” (HH:MM)</label>
+        <input type="time" name="now_override">
+      </div>
+    </div>
+  </details>
+  <p style="margin-top:14px"><button class="btn" type="submit">Re-optimize the day →</button></p>
+</form>
+{% endblock %}

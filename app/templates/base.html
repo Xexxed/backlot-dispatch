@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}Backlot Dispatch{% endblock %}</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header class="site">
+  <div class="brand">🎬 Backlot<span>Dispatch</span></div>
+  <nav>
+    <a href="/">Dashboard</a>
+    <a href="/changelog">Changelog</a>
+    <a href="/debug/gcp">GCP log</a>
+  </nav>
+</header>
+<main>
+{% if msg %}<div class="banner">{{ msg }}</div>{% endif %}
+{% block content %}{% endblock %}
+</main>
+<footer class="site">Backlot Dispatch — deterministic re-optimizer + Gemini intake · {{ production.title if production is defined and production else "demo" }}</footer>
+</body>
+</html>

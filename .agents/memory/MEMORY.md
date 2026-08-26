@@ -1,0 +1,1 @@
+- [Credential-history incident recovery](credential-history-recovery.md) — GitHub can be reset to a clean root; append-only backups require administrator deletion or recreation.

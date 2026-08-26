@@ -1,0 +1,77 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$PY.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+pip-log.txt
+pip-delete-this-directory.txt
+
+# --- Environments & secrets ---
+.venv/
+venv/
+env/
+ENV/
+.env
+.env.*
+!.env.example
+
+# --- Testing & tooling caches ---
+.pytest_cache/
+.tmp/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+.hypothesis/
+.mypy_cache/
+.ruff_cache/
+.uvcache/
+
+# --- Databases & runtime state (SQLite lives here) ---
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.sqlite3
+instance/
+
+# --- Generated assets ---
+# QR codes are regenerated on every publish
+app/static/qr/
+
+# --- Local scratch dirs (historical experiment leftovers) ---
+tmp/
+tmp-tests/
+.pytest-cache2/
+.pytest_tmp/
+
+# --- Replit workspace artifacts (never commit these) ---
+.upm/
+.pythonlibs/
+.cache/
+.local/
+.config/
+
+# --- Logs ---
+*.log
+logs/
+
+# --- OS ---
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# --- Editors ---
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# NEVER ignore these — they are part of the project:
+# .replit, seed/, requirements.txt, .env.example, PHASES.md, LICENSE

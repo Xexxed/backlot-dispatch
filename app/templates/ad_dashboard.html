@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>{{ production.title }} — {{ production.shoot_date }}
+  <span class="muted small">crew call {{ production.call_time | hhmm }}</span></h1>
+
+<section class="panel">
+  <h2 style="margin-top:0">Report a disruption</h2>
+  <form method="post" action="/incident">
+    <label for="free_text">What happened?</label>
+    <textarea id="free_text" name="free_text" rows="3"
+      placeholder='e.g. "Generator down at Stage 4, exterior unit blocked until 14:00"'></textarea>
+    <details>
+      <summary>Manual override &amp; demo controls</summary>
+      <div class="grid two">
+        <div>
+          <label>Type</label>
+          <select name="manual_type">
+            <option>LOCATION_BLOCKED</option>
+            <option>EQUIPMENT_FAILURE</option>
+            <option>CAST_DELAY</option>
+            <option>WEATHER</option>
+            <option>OTHER</option>
+          </select>
+          <label>Location</label>
+          <select name="manual_location">
+            <option value="">— none —</option>
+            {% for loc in production.locations.values() %}
+            <option value="{{ loc.id }}">{{ loc.id }} · {{ loc.name }}</option>
+            {% endfor %}
+          </select>
+          <label>Blocked until (HH:MM)</label>
+          <input type="time" name="manual_blocked_until">
+        </div>
+        <div>
+          <label>Severity</label>
+          <select name="manual_severity">
+            <option>low</option><option selected>medium</option><option>high</option>
+          </select>
+          <label>Demo clock — treat as “now” (HH:MM)</label>
+          <input type="time" name="now_override">
+          <label>Skip force-manual path</label>
+          <select name="force_manual"><option value="">No — run intake agent</option>
+            <option value="1">Yes — skip agent, file manually</option></select>
+        </div>
+      </div>
+      <label>Scenes already shot (completed before disruption)</label>
+      <div class="small muted">
+        {% for sid in production.scene_order %}{{ sid }}{% if not loop.last %}, {% endif %}{% endfor %}
+      </div>
+      {% set chunk = 8 %}
+      {% for start in range(0, production.scene_order | length, chunk) %}
+      <div class="grid" style="grid-template-columns: repeat({{ [chunk, production.scene_order|length - start] | min }}, 1fr)">
+        {% for sid in production.scene_order[start:start+chunk] %}
+        <label class="small" style="display:flex;gap:6px;align-items:center;margin-top:6px">
+          <input type="checkbox" name="completed" value="{{ sid }}" style="width:auto">{{ sid }}
+        </label>
+        {% endfor %}
+      </div>
+      {% endfor %}
+    </details>
+    <p style="margin-top:14px"><button class="btn" type="submit">Run agents → re-optimize</button></p>
+  </form>
+</section>
+
+{% if published %}
+<div class="banner">
+  <strong>Live plan:</strong> {{ published.id }} published —
+  {{ ack_count }}/{{ total_people }} acknowledgments.
+  <a href="/plans/{{ published.id }}">Review diff</a> · <a href="/changelog">Changelog</a>
+</div>
+{% endif %}
+
+<h2>Crew &amp; cast call times</h2>
+<div class="panel">
+<table>
+  <tr><th>Name</th><th>Dept</th><th>Was</th><th>Now</th><th>Δ</th><th>Ack</th><th>Link</th></tr>
+  {% for p in people %}
+  <tr>
+    <td>{{ p.name }}</td><td>{{ p.department }}</td>
+    <td>{{ p.baseline_hhmm }}</td>
+    <td>{{ p.new_hhmm or p.baseline_hhmm }}</td>
+    <td class="{% if p.delta > 0 %}call-delta late{% elif p.delta < 0 %}call-delta early{% else %}call-delta same{% endif %}">
+      {{ (p.delta > 0 and '+' ~ p.delta ~ 'min') or (p.delta < 0 and p.delta ~ 'min') or '—' }}
+    </td>
+    <td>{% if not published %}—{% elif p.id in acked_ids %}<span class="pill-ok">✔</span>{% else %}<span class="pill-no">pending</span>{% endif %}</td>
+    <td><a href="/c/{{ p.token }}">personal page</a></td>
+  </tr>
+  {% endfor %}
+</table>
+</div>
+
+<h2>Departments</h2>
+<p>{% for d in departments %}<a class="btn secondary small" href="/dept/{{ d | urlencode }}">{{ d }}</a> {% endfor %}</p>
+
+<h2>Baseline day board</h2>
+<div class="panel">
+<table>
+  <tr><th>Time</th><th>Scene</th><th>Location</th></tr>
+  {% for r in baseline_rows %}
+  <tr class="{{ 'meal' if r.is_meal }}">
+    <td>{{ r.span }}</td><td>{{ r.label }}</td><td>{{ r.location_name or '' }}</td>
+  </tr>
+  {% endfor %}
+</table>
+</div>
+
+<h2>Plan history</h2>
+<div class="panel">
+<table>
+  <tr><th>Plan</th><th>Created</th><th>Status</th><th></th></tr>
+  {% for pl in plans %}
+  <tr><td>{{ pl.id }}</td><td>{{ pl.created_at }}</td><td><span class="chip">{{ pl.status }}</span></td>
+      <td><a href="/plans/{{ pl.id }}">open</a></td></tr>
+  {% else %}<tr><td colspan="4" class="muted">No proposals yet.</td></tr>{% endfor %}
+</table>
+</div>
+{% endblock %}
