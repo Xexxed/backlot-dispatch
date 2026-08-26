@@ -1,15 +1,21 @@
 {% extends "base.html" %}
 {% block content %}
-<h1>Change log</h1>
+<div class="page-header">
+  <div>
+    <p class="eyebrow">History / published plans</p>
+    <h1>Change log</h1>
+    <p class="page-intro">A concise record of every approved schedule adjustment and the rule behind it.</p>
+  </div>
+</div>
 {% if published %}
 <div class="panel">
-  <p><strong>Live plan:</strong> {{ published.id }} · <span class="chip">{{ published.status }}</span></p>
-  <table>
-    <tr><th>Scene</th><th>Kind</th><th>Rule</th><th>Reason</th></tr>
+  <div class="panel-heading"><h3>Live plan <span class="muted small">{{ published.id }}</span></h3><span class="chip ok">{{ published.status }}</span></div>
+  <table class="responsive">
+    <tr><th scope="col">Scene</th><th scope="col">Kind</th><th scope="col">Rule</th><th scope="col">Reason</th></tr>
     {% for c in published.changes %}
-    <tr><td>{{ c.scene_id or '—' }}</td><td>{{ c.kind }}</td>
-        <td><span class="chip">{{ c.rule_id }}</span></td>
-        <td style="white-space:normal">{{ c.reason }}</td></tr>
+    <tr><td data-label="Scene">{{ c.scene_id or '—' }}</td><td data-label="Kind">{{ c.kind }}</td>
+        <td data-label="Rule"><span class="chip">{{ c.rule_id }}</span></td>
+        <td data-label="Reason" class="reason">{{ c.reason }}</td></tr>
     {% endfor %}
   </table>
   <p><a href="/plans/{{ published.id }}">Full diff view →</a></p>
@@ -18,13 +24,13 @@
 <p class="muted">Nothing published yet.</p>
 {% endif %}
 
-<h2>All plans</h2>
-<div class="panel">
-<table>
-  <tr><th>Plan</th><th>Created</th><th>Status</th><th></th></tr>
+<div class="section-heading"><h2>All plans</h2></div>
+<div class="panel table-panel">
+<table class="responsive">
+  <tr><th scope="col">Plan</th><th scope="col">Created</th><th scope="col">Status</th><th scope="col">View</th></tr>
   {% for pl in plans %}
-  <tr><td>{{ pl.id }}</td><td>{{ pl.created_at }}</td><td><span class="chip">{{ pl.status }}</span></td>
-      <td><a href="/plans/{{ pl.id }}">open</a></td></tr>
+  <tr><td data-label="Plan">{{ pl.id }}</td><td data-label="Created">{{ pl.created_at }}</td><td data-label="Status"><span class="chip">{{ pl.status }}</span></td>
+      <td data-label="View"><a href="/plans/{{ pl.id }}">Open plan</a></td></tr>
   {% else %}<tr><td colspan="4" class="muted">No plans yet.</td></tr>{% endfor %}
 </table>
 </div>

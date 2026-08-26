@@ -1,10 +1,16 @@
 {% extends "base.html" %}
 {% block content %}
-<h1>{{ production.title }} — {{ production.shoot_date }}
-  <span class="muted small">crew call {{ production.call_time | hhmm }}</span></h1>
+<div class="page-header">
+  <div>
+    <p class="eyebrow">Production control / live day</p>
+    <h1>{{ production.title }} <span class="heading-meta">{{ production.shoot_date }} · crew call {{ production.call_time | hhmm }}</span></h1>
+  </div>
+  <span class="status-pill">Board active</span>
+</div>
 
-<section class="panel">
-  <h2 style="margin-top:0">Report a disruption</h2>
+<section class="panel incident-panel">
+  <div class="section-heading"><h2>Report a disruption</h2></div>
+  <p class="page-intro">Describe the problem in plain language. The intake agent will translate it into a safe, reviewable recovery plan.</p>
   <form method="post" action="/incident">
     <label for="free_text">What happened?</label>
     <textarea id="free_text" name="free_text" rows="3"
@@ -49,68 +55,67 @@
       </div>
       {% set chunk = 8 %}
       {% for start in range(0, production.scene_order | length, chunk) %}
-      <div class="grid" style="grid-template-columns: repeat({{ [chunk, production.scene_order|length - start] | min }}, 1fr)">
+      <div class="grid scene-checks">
         {% for sid in production.scene_order[start:start+chunk] %}
-        <label class="small" style="display:flex;gap:6px;align-items:center;margin-top:6px">
-          <input type="checkbox" name="completed" value="{{ sid }}" style="width:auto">{{ sid }}
+        <label class="scene-toggle">
+          <input type="checkbox" name="completed" value="{{ sid }}">{{ sid }}
         </label>
         {% endfor %}
       </div>
       {% endfor %}
     </details>
-    <p style="margin-top:14px"><button class="btn" type="submit">Run agents → re-optimize</button></p>
+    <div class="form-actions"><button class="btn" type="submit">Run agents <span aria-hidden="true">→</span> re-optimize</button></div>
   </form>
 </section>
 
 {% if published %}
-<div class="banner">
-  <strong>Live plan:</strong> {{ published.id }} published —
-  {{ ack_count }}/{{ total_people }} acknowledgments.
-  <a href="/plans/{{ published.id }}">Review diff</a> · <a href="/changelog">Changelog</a>
+<div class="banner live-banner">
+  <div><strong>Live plan:</strong> {{ published.id }} published · {{ ack_count }}/{{ total_people }} acknowledgments.</div>
+  <div><a href="/plans/{{ published.id }}">Review diff</a> · <a href="/changelog">Changelog</a></div>
 </div>
 {% endif %}
 
-<h2>Crew &amp; cast call times</h2>
-<div class="panel">
-<table>
-  <tr><th>Name</th><th>Dept</th><th>Was</th><th>Now</th><th>Δ</th><th>Ack</th><th>Link</th></tr>
+<div class="section-heading"><h2>Crew &amp; cast call times</h2></div>
+<div class="panel table-panel">
+<table class="responsive">
+  <tr><th scope="col">Name</th><th scope="col">Dept</th><th scope="col">Was</th><th scope="col">Now</th><th scope="col">Δ</th><th scope="col">Ack</th><th scope="col">Link</th></tr>
   {% for p in people %}
   <tr>
-    <td>{{ p.name }}</td><td>{{ p.department }}</td>
-    <td>{{ p.baseline_hhmm }}</td>
-    <td>{{ p.new_hhmm or p.baseline_hhmm }}</td>
-    <td class="{% if p.delta > 0 %}call-delta late{% elif p.delta < 0 %}call-delta early{% else %}call-delta same{% endif %}">
+    <td data-label="Name">{{ p.name }}</td><td data-label="Dept">{{ p.department }}</td>
+    <td data-label="Was">{{ p.baseline_hhmm }}</td>
+    <td data-label="Now">{{ p.new_hhmm or p.baseline_hhmm }}</td>
+    <td data-label="Change" class="{% if p.delta > 0 %}call-delta late{% elif p.delta < 0 %}call-delta early{% else %}call-delta same{% endif %}">
       {{ (p.delta > 0 and '+' ~ p.delta ~ 'min') or (p.delta < 0 and p.delta ~ 'min') or '—' }}
     </td>
-    <td>{% if not published %}—{% elif p.id in acked_ids %}<span class="pill-ok">✔</span>{% else %}<span class="pill-no">pending</span>{% endif %}</td>
-    <td><a href="/c/{{ p.token }}">personal page</a></td>
+    <td data-label="Ack">{% if not published %}—{% elif p.id in acked_ids %}<span class="pill-ok">✔ confirmed</span>{% else %}<span class="pill-no">pending</span>{% endif %}</td>
+    <td data-label="Link"><a href="/c/{{ p.token }}">Personal page</a></td>
   </tr>
   {% endfor %}
 </table>
 </div>
 
-<h2>Departments</h2>
+<div class="section-heading"><h2>Departments</h2></div>
 <p>{% for d in departments %}<a class="btn secondary small" href="/dept/{{ d | urlencode }}">{{ d }}</a> {% endfor %}</p>
 
-<h2>Baseline day board</h2>
-<div class="panel">
-<table>
-  <tr><th>Time</th><th>Scene</th><th>Location</th></tr>
+<div class="section-heading"><h2>Baseline day board</h2></div>
+<div class="panel table-panel">
+<table class="responsive">
+  <tr><th scope="col">Time</th><th scope="col">Scene</th><th scope="col">Location</th></tr>
   {% for r in baseline_rows %}
   <tr class="{{ 'meal' if r.is_meal }}">
-    <td>{{ r.span }}</td><td>{{ r.label }}</td><td>{{ r.location_name or '' }}</td>
+    <td data-label="Time">{{ r.span }}</td><td data-label="Scene">{{ r.label }}</td><td data-label="Location">{{ r.location_name or '' }}</td>
   </tr>
   {% endfor %}
 </table>
 </div>
 
-<h2>Plan history</h2>
-<div class="panel">
-<table>
-  <tr><th>Plan</th><th>Created</th><th>Status</th><th></th></tr>
+<div class="section-heading"><h2>Plan history</h2></div>
+<div class="panel table-panel">
+<table class="responsive">
+  <tr><th scope="col">Plan</th><th scope="col">Created</th><th scope="col">Status</th><th scope="col">View</th></tr>
   {% for pl in plans %}
-  <tr><td>{{ pl.id }}</td><td>{{ pl.created_at }}</td><td><span class="chip">{{ pl.status }}</span></td>
-      <td><a href="/plans/{{ pl.id }}">open</a></td></tr>
+  <tr><td data-label="Plan">{{ pl.id }}</td><td data-label="Created">{{ pl.created_at }}</td><td data-label="Status"><span class="chip">{{ pl.status }}</span></td>
+      <td data-label="View"><a href="/plans/{{ pl.id }}">Open plan</a></td></tr>
   {% else %}<tr><td colspan="4" class="muted">No proposals yet.</td></tr>{% endfor %}
 </table>
 </div>

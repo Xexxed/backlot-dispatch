@@ -1,7 +1,14 @@
 {% extends "base.html" %}
 {% block title %}{{ dept }} — Backlot Dispatch{% endblock %}
 {% block content %}
-<h1>{{ dept }} <span class="chip">department board</span></h1>
+<div class="page-header">
+  <div>
+    <p class="eyebrow">Crew / department board</p>
+    <h1>{{ dept }}</h1>
+    <p class="page-intro">Every call time and update for this department, ready to share on set.</p>
+  </div>
+  <span class="chip info">Department board</span>
+</div>
 
 {% if not published %}
 <div class="banner muted">Baseline schedule — no live plan published yet.</div>
@@ -11,35 +18,35 @@
 </div>
 {% endif %}
 
-<div class="panel">
-<table>
-  <tr><th>Name</th><th>Role</th><th>Was</th><th>Now</th><th>Δ</th><th>Link</th></tr>
+<div class="panel table-panel">
+<table class="responsive">
+  <tr><th scope="col">Name</th><th scope="col">Role</th><th scope="col">Was</th><th scope="col">Now</th><th scope="col">Δ</th><th scope="col">Link</th></tr>
   {% for m in members %}
   <tr>
-    <td>{{ m.member.name }}</td><td>{{ m.member.role }}</td>
-    <td>{{ m.baseline_hhmm }}</td>
-    <td>{{ m.new_hhmm or m.baseline_hhmm }}</td>
-    <td class="{% if m.delta > 0 %}call-delta late{% elif m.delta < 0 %}call-delta early{% else %}call-delta same{% endif %}">
+    <td data-label="Name">{{ m.member.name }}</td><td data-label="Role">{{ m.member.role }}</td>
+    <td data-label="Was">{{ m.baseline_hhmm }}</td>
+    <td data-label="Now">{{ m.new_hhmm or m.baseline_hhmm }}</td>
+    <td data-label="Change" class="{% if m.delta > 0 %}call-delta late{% elif m.delta < 0 %}call-delta early{% else %}call-delta same{% endif %}">
       {% if published %}{{ (m.delta > 0 and '+' ~ m.delta ~ 'min') or (m.delta < 0 and m.delta ~ 'min') or '—' }}{% else %}—{% endif %}
     </td>
-    <td><a href="/c/{{ m.token }}">personal page</a></td>
+    <td data-label="Link"><a href="/c/{{ m.token }}">Personal page</a></td>
   </tr>
   {% endfor %}
 </table>
 </div>
 
 {% if published %}
-<h2>What changed for {{ dept }}</h2>
+<div class="section-heading"><h2>What changed for {{ dept }}</h2></div>
 {% set dept_changes = [] %}
 {% for m in members %}{% for c in m.changes %}{% if dept_changes.append(c) %}{% endif %}{% endfor %}{% endfor %}
 <div class="panel">
   {% if dept_changes %}
-  <table>
-    <tr><th>Who</th><th>Rule</th><th>Reason</th></tr>
+  <table class="responsive">
+    <tr><th scope="col">Who</th><th scope="col">Rule</th><th scope="col">Reason</th></tr>
     {% for m in members %}{% if m.changes %}
     {% for c in m.changes %}
-    <tr><td>{{ m.member.name }}</td><td><span class="chip">{{ c.rule_id }}</span></td>
-        <td style="white-space:normal">{{ c.reason }}</td></tr>
+    <tr><td data-label="Who">{{ m.member.name }}</td><td data-label="Rule"><span class="chip">{{ c.rule_id }}</span></td>
+        <td data-label="Reason" class="reason">{{ c.reason }}</td></tr>
     {% endfor %}
     {% endif %}{% endfor %}
   </table>
@@ -47,7 +54,7 @@
   <p class="muted">No one in {{ dept }} is affected by plan {{ published.id }}.</p>
   {% endif %}
   {% if published.narration %}<details><summary>Full crew note</summary>
-    <pre style="white-space:pre-wrap;font-family:inherit;margin:0">{{ published.narration.text }}</pre></details>{% endif %}
+    <pre>{{ published.narration.text }}</pre></details>{% endif %}
 </div>
 {% endif %}
 {% endblock %}

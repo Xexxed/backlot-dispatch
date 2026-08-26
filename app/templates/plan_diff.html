@@ -1,29 +1,35 @@
 {% extends "base.html" %}
 {% block content %}
-<h1>Plan review — {{ plan.id }} <span class="chip {{ 'ok' if plan.is_feasible else 'err' }}">{{ 'FEASIBLE' if plan.is_feasible else 'NEEDS ATTENTION' }}</span></h1>
+<div class="page-header">
+  <div>
+    <p class="eyebrow">Operations / review gate</p>
+    <h1>Plan review <span class="heading-meta">{{ plan.id }}</span></h1>
+  </div>
+  <span class="chip {{ 'ok' if plan.is_feasible else 'err' }}">{{ 'FEASIBLE' if plan.is_feasible else 'NEEDS ATTENTION' }}</span>
+</div>
 
 <div class="banner">
   <strong>What changed &amp; why</strong> <span class="chip">narrator: {{ plan.narration.source if plan.narration else 'template' }}</span>
-  <pre style="white-space:pre-wrap;margin:8px 0 0;font-family:inherit">{{ plan.narration.text if plan.narration else '' }}</pre>
+  <pre>{{ plan.narration.text if plan.narration else '' }}</pre>
 </div>
 
-<h2>Change log (machine-checkable)</h2>
-<div class="panel">
-<table>
-  <tr><th>Scene</th><th>Kind</th><th>Rule</th><th>Reason</th></tr>
+<div class="section-heading"><h2>Change log <span class="muted small">(machine-checkable)</span></h2></div>
+<div class="panel table-panel">
+<table class="responsive">
+  <tr><th scope="col">Scene</th><th scope="col">Kind</th><th scope="col">Rule</th><th scope="col">Reason</th></tr>
   {% for c in plan.changes %}
   <tr>
-    <td>{{ c.scene_id or '—' }}</td>
-    <td><span class="chip">{{ c.kind }}</span></td>
-    <td><span class="chip">{{ c.rule_id }}</span></td>
-    <td style="white-space:normal">{{ c.reason }}</td>
+    <td data-label="Scene">{{ c.scene_id or '—' }}</td>
+    <td data-label="Kind"><span class="chip">{{ c.kind }}</span></td>
+    <td data-label="Rule"><span class="chip">{{ c.rule_id }}</span></td>
+    <td data-label="Reason" class="reason">{{ c.reason }}</td>
   </tr>
   {% else %}<tr><td colspan="4" class="muted">No changes — schedule already compliant.</td></tr>{% endfor %}
 </table>
 </div>
 
 {% if plan.diagnostics %}
-<h2>Diagnostics</h2>
+<div class="section-heading"><h2>Diagnostics</h2></div>
 <div class="panel">
   {% for d in plan.diagnostics %}
   <p><span class="chip err">{{ d.rule_id }}</span> {{ d.message }}</p>
@@ -31,24 +37,24 @@
 </div>
 {% endif %}
 
-<h2>Baseline vs proposed</h2>
+<div class="section-heading"><h2>Baseline vs proposed</h2></div>
 <div class="grid two">
   <div class="panel">
-    <strong>Remaining baseline</strong>
-    <table>
-      <tr><th>Time</th><th>Scene</th><th>Location</th></tr>
+    <div class="panel-heading"><h3>Remaining baseline</h3><span class="muted small">Reference</span></div>
+    <table class="responsive">
+      <tr><th scope="col">Time</th><th scope="col">Scene</th><th scope="col">Location</th></tr>
       {% for r in baseline_rows %}
-      <tr class="{{ 'meal' if r.is_meal }}"><td>{{ r.span }}</td><td>{{ r.label }}</td><td>{{ r.location_name or '' }}</td></tr>
+      <tr class="{{ 'meal' if r.is_meal }}"><td data-label="Time">{{ r.span }}</td><td data-label="Scene">{{ r.label }}</td><td data-label="Location">{{ r.location_name or '' }}</td></tr>
       {% endfor %}
     </table>
   </div>
   <div class="panel">
-    <strong>Proposed</strong>
-    <table>
-      <tr><th>Time</th><th>Scene</th><th>Location</th></tr>
+    <div class="panel-heading"><h3>Proposed</h3><span class="chip ok">Review</span></div>
+    <table class="responsive">
+      <tr><th scope="col">Time</th><th scope="col">Scene</th><th scope="col">Location</th></tr>
       {% for r in proposed_rows %}
       <tr class="{{ 'moved' if r.id in moved_ids }} {{ 'meal' if r.is_meal }}">
-        <td>{{ r.span }}</td><td>{{ r.label }}{% if r.id in moved_ids %} <span class="chip ok">moved</span>{% endif %}</td><td>{{ r.location_name or '' }}</td>
+        <td data-label="Time">{{ r.span }}</td><td data-label="Scene">{{ r.label }}{% if r.id in moved_ids %} <span class="chip ok">moved</span>{% endif %}</td><td data-label="Location">{{ r.location_name or '' }}</td>
       </tr>
       {% endfor %}
     </table>

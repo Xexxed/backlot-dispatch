@@ -1,12 +1,18 @@
 {% extends "base.html" %}
 {% block content %}
-<h1>Report a disruption</h1>
+<div class="page-header">
+  <div>
+    <p class="eyebrow">Intake / new event</p>
+    <h1>Report a disruption</h1>
+    <p class="page-intro">Give the recovery team the signal. We’ll prepare a proposed schedule for your review.</p>
+  </div>
+</div>
 {% if fallback_reason %}
 <div class="banner warn">
   <strong>Intake agent handed off:</strong> {{ fallback_reason }}
 </div>
 {% endif %}
-<form method="post" action="/incident">
+<form class="panel" method="post" action="/incident">
   <label for="free_text">Describe what happened</label>
   <textarea id="free_text" name="free_text" rows="4">{{ free_text }}</textarea>
 
@@ -42,6 +48,6 @@
       </div>
     </div>
   </details>
-  <p style="margin-top:14px"><button class="btn" type="submit">Re-optimize the day →</button></p>
+  <div class="form-actions"><button class="btn" type="submit">Re-optimize the day <span aria-hidden="true">→</span></button></div>
 </form>
 {% endblock %}

@@ -76,6 +76,7 @@ def test_full_incident_to_ack_roundtrip(client):
     assert card.status_code == 200, card.text
     assert "What changed" in card.text
     assert "I've seen this" in card.text  # ack button present pre-ack
+    assert f'action="/c/{token}/ack"' in card.text
 
     # 6. ack round-trip: POST then verify on the page and dashboard
     acked = client.post(f"/c/{token}/ack", data={}, follow_redirects=False)

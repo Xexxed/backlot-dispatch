@@ -1,1 +1,2 @@
 - [Credential-history incident recovery](credential-history-recovery.md) — GitHub can be reset to a clean root; append-only backups require administrator deletion or recreation.
+- [Host fallback tests on Replit](host-fallback-tests.md) — remove deployment-origin variables from the pytest process when exercising request-host fallback behavior.

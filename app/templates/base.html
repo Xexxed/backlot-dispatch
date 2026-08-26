@@ -4,11 +4,22 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block title %}Backlot Dispatch{% endblock %}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/static/style.css">
+<script>
+  document.documentElement.classList.add("js-enabled");
+  document.addEventListener("DOMContentLoaded", function () {
+    window.requestAnimationFrame(function () {
+      document.body.classList.add("page-ready");
+    });
+  });
+</script>
 </head>
 <body>
 <header class="site">
-  <div class="brand">🎬 Backlot<span>Dispatch</span></div>
+  <div class="brand"><span class="brand-mark" aria-hidden="true">▣</span><span>Backlot</span><span>Dispatch</span></div>
   <nav>
     <a href="/">Dashboard</a>
     <a href="/changelog">Changelog</a>
@@ -16,8 +27,20 @@
   </nav>
 </header>
 <main>
-{% if msg %}<div class="banner">{{ msg }}</div>{% endif %}
-{% block content %}{% endblock %}
+  <div class="page-skeleton" aria-hidden="true">
+    <div class="skeleton-block hero"></div>
+    <div class="skeleton-block short"></div>
+    <div class="skeleton-panel">
+      <div class="skeleton-block short"></div>
+      <div class="skeleton-block wide"></div>
+      <div class="skeleton-block wide"></div>
+      <div class="skeleton-block short"></div>
+    </div>
+  </div>
+  <div class="page-content">
+    {% if msg %}<div class="banner">{{ msg }}</div>{% endif %}
+    {% block content %}{% endblock %}
+  </div>
 </main>
 <footer class="site">Backlot Dispatch — deterministic re-optimizer + Gemini intake · {{ production.title if production is defined and production else "demo" }}</footer>
 </body>

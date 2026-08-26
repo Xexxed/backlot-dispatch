@@ -1,14 +1,19 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="banner">
-  {{ person.name }} — {{ department }}{% if role %} · {{ role }}{% endif %}
+<div class="page-header">
+  <div>
+    <p class="eyebrow">Personal call card / on set</p>
+    <h1>{{ person.name }}</h1>
+    <p class="page-intro">{{ department }}{% if role %} · {{ role }}{% endif %}</p>
+  </div>
+  <span class="status-pill">Private link</span>
 </div>
 
 <div class="call-card">
-  <div class="muted small">Your call time</div>
+  <div class="kicker">Your call time</div>
   <div class="call-time">{{ card.new_hhmm or card.baseline_hhmm }}</div>
   {% if published and card.delta %}
-  <div class="call-delta {{ 'late' if card.delta > 0 else 'early' }}">
+   <div class="call-delta {{ 'late' if card.delta > 0 else 'early' }}">
     updated by {{ '+' if card.delta > 0 else '' }}{{ card.delta }}min
     (was {{ card.baseline_hhmm }})
   </div>
@@ -17,35 +22,35 @@
   {% else %}
   <div class="muted small">Baseline schedule — no live plan published.</div>
   {% endif %}
-  {% if card.first_scene %}<div class="muted small">first scene: {{ card.first_scene }}</div>{% endif %}
+   {% if card.first_scene %}<div class="muted small">First scene: {{ card.first_scene }}</div>{% endif %}
 </div>
 
 {% if published %}
 <section class="panel">
-  <h2 style="margin-top:0">What changed &amp; why</h2>
+  <div class="section-heading"><h2>What changed &amp; why</h2></div>
   {% if my_changes %}
   <ul>
     {% for c in my_changes %}
-    <li style="white-space:normal"><span class="chip">{{ c.rule_id }}</span> {{ c.reason }}</li>
+     <li><span class="chip">{{ c.rule_id }}</span> {{ c.reason }}</li>
     {% endfor %}
   </ul>
   {% else %}
   <p class="muted">Your scenes are unaffected by plan {{ published.id }}.</p>
   {% endif %}
-  {% if published.narration %}<details><summary>Full crew note</summary>
-    <pre style="white-space:pre-wrap;font-family:inherit;margin:0">{{ published.narration.text }}</pre></details>{% endif %}
+   {% if published.narration %}<details><summary>Full crew note</summary>
+     <pre>{{ published.narration.text }}</pre></details>{% endif %}
 </section>
 
 <section class="panel">
   {% if acked %}
   <p><span class="pill-ok">✔ Acknowledged</span> — the AD can see your confirmation.</p>
   {% else %}
-  <form method="post" action="/c/{{ token }}">
+  <form method="post" action="/c/{{ token }}/ack">
     <button class="btn" type="submit">I've seen this ✔</button>
   </form>
   {% endif %}
   {% if not acked %}
-  <p class="small muted" style="margin-top:10px">
+   <p class="small muted">
     Or show this QR at the truck: <img class="qr" src="/static/qr/{{ token }}.svg" alt="QR code to open this page"></p>
   {% endif %}
 </section>

@@ -1,17 +1,22 @@
 {% extends "base.html" %}
 {% block content %}
-<h1>Gemini runtime evidence</h1>
-<p class="muted small">Every Google Cloud model call is logged here — contest gate proof that the
+<div class="page-header">
+  <div>
+    <p class="eyebrow">Runtime / observability</p>
+    <h1>Gemini runtime evidence</h1>
+    <p class="page-intro">Every Google Cloud model call is logged here — contest gate proof that the
 agent runtime calls Vertex AI at request time.</p>
+  </div>
+</div>
 <div class="panel">
-<table>
-  <tr><th>When (UTC)</th><th>Kind</th><th>Model</th><th>Latency</th><th>OK</th><th>Meta</th></tr>
+  <table class="responsive">
+  <tr><th scope="col">When (UTC)</th><th scope="col">Kind</th><th scope="col">Model</th><th scope="col">Latency</th><th scope="col">OK</th><th scope="col">Meta</th></tr>
   {% for c in calls %}
   <tr>
-    <td>{{ c.ts }}</td><td><span class="chip">{{ c.kind }}</span></td><td>{{ c.model }}</td>
-    <td>{{ c.latency_ms }}ms</td>
-    <td>{% if c.ok %}<span class="pill-ok">✔</span>{% else %}<span class="pill-no">✘</span>{% endif %}</td>
-    <td class="small muted" style="white-space:normal">{{ c.meta_json }}</td>
+    <td data-label="When">{{ c.ts }}</td><td data-label="Kind"><span class="chip">{{ c.kind }}</span></td><td data-label="Model">{{ c.model }}</td>
+    <td data-label="Latency">{{ c.latency_ms }}ms</td>
+    <td data-label="OK">{% if c.ok %}<span class="pill-ok">✔ passed</span>{% else %}<span class="pill-no">✘ failed</span>{% endif %}</td>
+    <td data-label="Meta" class="small muted meta">{{ c.meta_json }}</td>
   </tr>
   {% else %}
   <tr><td colspan="6" class="muted">No Gemini calls yet. Configure credentials and file an incident.</td></tr>
