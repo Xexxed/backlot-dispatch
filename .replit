@@ -4,6 +4,7 @@ modules = ["python-3.12", "web"]
 
 [nix]
 channel = "stable-25_05"
+packages = ["libxcrypt"]
 
 [deployment]
 run = ["sh", "-c", "python -m uvicorn app.main:app --host 0.0.0.0 --port $PORT"]
