@@ -1,0 +1,19 @@
+You are improving the visual design of "Backlot Dispatch" (backlot-dispatch repo), a film-set disruption-recovery tool. Stack: FastAPI + Jinja2 server-rendered templates (app/templates/, all extending base.html) + one stylesheet (app/static/style.css). No frontend framework.
+
+GOAL: Transform the current utilitarian look into a polished, premium, mobile-first product with a "cinema studio operations" identity.
+
+DESIGN DIRECTION:
+- Dark theme: deep slate/near-black surfaces (#0f1115 range), elevated panels slightly lighter, subtle 1px borders instead of heavy shadows.
+- Accent: amber/gold (#f5a623 range) evoking a clapperboard/set lighting; semantic colors for statuses (green=moved-ok, red=violation, blue=info).
+- Typography: Inter or IBM Plex Sans from Google Fonts, clear hierarchy, generous spacing, uppercase letter-spaced labels for chips/kickers.
+- Consistent components: buttons (primary/danger/secondary), chips/badges, panels, forms, banners, tables. Tables on mobile should collapse into readable stacked cards via CSS only.
+- The crew-facing pages (/c/{token} personal call card, department boards) are viewed on phones ON SET — make call times huge and glanceable.
+
+SKELETON LOADERS (required): Add elegant shimmer skeleton placeholders that render instantly inside base.html for the main content region and fade out smoothly when the real content arrives (tiny inline JS on DOMContentLoaded/load, plus pure-CSS shimmer animation). Apply the same skeleton component to any async-updating regions. Must respect `prefers-reduced-motion` (no shimmer/fade animation) and work acceptably with JavaScript disabled (content never hidden permanently).
+
+SCOPE GUARDS — DO NOT:
+- Touch any Python logic in app/engine.py, app/rules.py, app/timeline.py, app/store.py, or change any route paths, form field names, or template variable names.
+- Add any AI vendor SDK other than what's already present.
+- Add npm/build tooling; plain CSS + vanilla JS only.
+
+VERIFY BEFORE FINISHING: start the server, click through /, /incident, a /plans/{id} diff, /changelog, a /dept/{name} board, and one /c/{token} crew page on a phone-sized viewport; then run `pytest` and confirm all tests still pass. Commit with a descriptive message.
