@@ -264,7 +264,13 @@ h3 { margin: 0; font-size: 1rem; }
   content: "";
 }
 .grid { display: grid; gap: 16px; }
-@media (min-width: 720px) { .grid.two { grid-template-columns: 1fr 1fr; } }
+@media (min-width: 720px) {
+  .grid.two { grid-template-columns: 1fr 1fr; }
+  .grid.three { grid-template-columns: repeat(3, 1fr); }
+}
+.card-actions { margin-top: 14px; display: flex; flex-direction: column; gap: 8px; }
+.sandbox-card.is-selected { border-color: var(--ok); box-shadow: 0 0 0 1px rgba(85, 214, 155, 0.4); }
+.sandbox-card .responsive td:first-child { color: var(--muted); width: 38%; }
 
 table {
   width: 100%;

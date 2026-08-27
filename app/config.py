@@ -5,6 +5,7 @@ Locally, a .env file is loaded automatically (python-dotenv).
 """
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -50,9 +51,21 @@ def ensure_gcp_credentials() -> None:
     """
     blob = _env("GOOGLE_SERVICE_ACCOUNT_JSON")
     if blob and not _env("GOOGLE_APPLICATION_CREDENTIALS"):
+        cleaned = blob.strip()
+        if (cleaned.startswith("'") and cleaned.endswith("'")) or (
+            cleaned.startswith('"') and cleaned.endswith('"')
+        ):
+            cleaned = cleaned[1:-1].strip()
+        try:
+            parsed = json.loads(cleaned)
+            if not isinstance(parsed, dict) or not parsed.get("type"):
+                return
+        except Exception:
+            return
+
         path = Path(_env("GCP_SA_FILE", "instance/gcp-service-account.json"))
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(blob, encoding="utf-8")
+        path.write_text(cleaned, encoding="utf-8")
         os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = str(path)
 
 
@@ -66,6 +79,7 @@ class Settings:
         self.gemini_model = _env("GEMINI_MODEL", "gemini-2.5-flash")
         self.app_secret = _env("APP_SECRET", "dev-secret-not-for-production")
         self.day_start = _env("DAY_START", "07:00")
+        self.manual_recovery_baseline_minutes = int(_env("MANUAL_RECOVERY_BASELINE_MINUTES", "90"))
         self.db_path = Path(_env("DB_PATH", "instance/backlot.db"))
         self.seed_dir = Path(_env("SEED_DIR", "seed"))
         # Canonical external origin for generated absolute links (QR payloads).

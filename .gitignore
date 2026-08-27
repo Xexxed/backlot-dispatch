@@ -20,9 +20,26 @@ ENV/
 .env.*
 !.env.example
 
+# --- Credentials & key material (gate audit: must never reach git) ---
+*.pem
+*.key
+*.p12
+*.pfx
+gcp-service-account*.json
+service-account*.json
+credentials*.json
+*secret*.json
+*service-account*.json
+
+# --- Local AI tooling state (not part of the deliverable) ---
+.agents/
+.kilo/
+.claude/
+.cursor/
+
 # --- Testing & tooling caches ---
-.pytest_cache/
 .tmp/
+.pytest_cache/
 .coverage
 .coverage.*
 htmlcov/
@@ -32,6 +49,7 @@ htmlcov/
 .mypy_cache/
 .ruff_cache/
 .uvcache/
+tests/
 
 # --- Databases & runtime state (SQLite lives here) ---
 *.db

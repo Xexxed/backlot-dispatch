@@ -23,7 +23,8 @@ CREATE TABLE IF NOT EXISTS plans (
     created_at TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'proposed',
     incident_json TEXT NOT NULL,
-    payload_json TEXT NOT NULL
+    payload_json TEXT NOT NULL,
+    group_id TEXT NOT NULL DEFAULT ''
 );
 CREATE TABLE IF NOT EXISTS acks (
     plan_id TEXT NOT NULL,
@@ -54,6 +55,12 @@ class Store:
         self._lock = threading.Lock()
         with self._lock:
             self._conn.executescript(_SCHEMA)
+            # Backfill group_id on databases created before the sandbox feature.
+            cols = {r["name"] for r in self._conn.execute("PRAGMA table_info(plans)")}
+            if "group_id" not in cols:
+                self._conn.execute(
+                    "ALTER TABLE plans ADD COLUMN group_id TEXT NOT NULL DEFAULT ''"
+                )
             self._conn.commit()
 
     def close(self) -> None:
@@ -65,26 +72,53 @@ class Store:
         with self._lock:
             self._conn.execute(
                 "INSERT OR REPLACE INTO plans "
-                "(id, created_at, status, incident_json, payload_json) VALUES (?,?,?,?,?)",
+                "(id, created_at, status, incident_json, payload_json, group_id) "
+                "VALUES (?,?,?,?,?,?)",
                 (
                     payload["id"],
                     payload["created_at"],
                     payload.get("status", "proposed"),
                     json.dumps(payload.get("incident", {})),
                     json.dumps(payload),
+                    payload.get("group_id", ""),
                 ),
             )
             self._conn.commit()
 
+    def plans_in_group(self, group_id: str) -> list[dict]:
+        """All option payloads of a sandbox group, in insertion order."""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT payload_json, status FROM plans WHERE group_id = ? "
+                "ORDER BY rowid ASC",
+                (group_id,),
+            ).fetchall()
+        out = []
+        for row in rows:
+            payload = json.loads(row["payload_json"])
+            payload["status"] = row["status"]
+            out.append(payload)
+        return out
+
+    def group_has_published(self, group_id: str) -> bool:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT 1 FROM plans WHERE group_id = ? AND status LIKE 'published%' "
+                "LIMIT 1",
+                (group_id,),
+            ).fetchone()
+        return row is not None
+
     def get_plan(self, plan_id: str) -> dict | None:
         with self._lock:
             row = self._conn.execute(
-                "SELECT payload_json, status FROM plans WHERE id = ?", (plan_id,)
+                "SELECT payload_json, status, group_id FROM plans WHERE id = ?", (plan_id,)
             ).fetchone()
         if row is None:
             return None
         payload = json.loads(row["payload_json"])
         payload["status"] = row["status"]
+        payload["group_id"] = row["group_id"]
         return payload
 
     def set_plan_status(self, plan_id: str, status: str) -> None:

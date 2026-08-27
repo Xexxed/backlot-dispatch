@@ -1,6 +1,7 @@
 """AD-side routes: dashboard, incident intake, plan review/publish, reports."""
 from __future__ import annotations
 
+import time
 import uuid
 from datetime import datetime
 from typing import Annotated
@@ -10,11 +11,11 @@ from fastapi import APIRouter, Form, Request
 from fastapi.responses import PlainTextResponse, RedirectResponse
 
 from app.agents.intake import FallbackRequired, parse_incident
-from app.agents.narrator import narrate
-from app.engine import baseline_context, replan
+from app.agents.narrator import narrate, narrate_plan
+from app.engine import STRATEGIES, baseline_context, replan
 from app.models import Incident, hhmm_to_minutes
 from app.schedule_view import changes_for_person, compute_calls
-from app.serialize import proposal_to_dict, timeline_rows
+from app.serialize import option_stats, proposal_to_dict, timeline_rows
 from app.store import utc_now_iso
 from app.timeline import build_timeline
 from app.tokens import subject_token
@@ -33,6 +34,25 @@ def _now_minutes(override: str | None) -> int:
 
 def _token_for(state, kind: str, subject_id: str) -> str:
     return subject_token(state.settings.app_secret, kind, subject_id)
+
+
+def _recovery_stat(plan: dict | None, settings) -> dict | None:
+    if not plan or not isinstance(plan, dict):
+        return None
+    sec = plan.get("recovery_seconds")
+    if not isinstance(sec, (int, float)) or sec <= 0:
+        return None
+
+    baseline_min = getattr(settings, "manual_recovery_baseline_minutes", 90)
+    baseline_sec = baseline_min * 60
+    speedup = baseline_sec / sec
+    return {
+        "seconds": sec,
+        "display": f"{sec:.1f}s",
+        "baseline_minutes": baseline_min,
+        "baseline_display": f"{baseline_min}m",
+        "speedup_display": f"{speedup:.0f}× faster" if speedup >= 10 else f"{speedup:.1f}× faster",
+    }
 
 
 @router.get("/")
@@ -69,6 +89,10 @@ def dashboard(request: Request, msg: str = ""):
         )
     people.sort(key=lambda p: (p["department"], p["name"]))
 
+    plans = store.list_plans()
+    latest_plan = published or (store.get_plan(plans[0]["id"]) if plans else None)
+    recovery_stat = _recovery_stat(latest_plan, st.settings)
+
     return st.templates.TemplateResponse(
         request,
         "ad_dashboard.html",
@@ -76,12 +100,13 @@ def dashboard(request: Request, msg: str = ""):
             "production": production,
             "baseline_rows": baseline_rows,
             "published": published,
-            "plans": store.list_plans(),
+            "plans": plans,
             "people": people,
             "departments": production.departments,
             "ack_count": len(acked_ids),
             "total_people": len(people),
             "acked_ids": acked_ids,
+            "recovery_stat": recovery_stat,
             "msg": msg,
         },
     )
@@ -109,6 +134,7 @@ async def create_incident(
     completed: Annotated[list[str] | None, Form()] = None,
     now_override: Annotated[str, Form()] = "",
 ):
+    t0 = time.perf_counter()
     st = request.app.state
     settings, production, store = st.settings, st.production, st.store
 
@@ -138,22 +164,113 @@ async def create_incident(
 
     plan_id = uuid.uuid4().hex[:12]
     now_minutes = _now_minutes(now_override or None)
-    proposal = replan(
-        production,
-        st.rbc,
-        completed_scene_ids=[c for c in (completed or []) if c],
-        incident=incident,
-        now_minutes=now_minutes,
-        plan_id=plan_id,
-        created_at=utc_now_iso(),
+    has_blocking = bool(
+        incident.location_id and incident.blocked_until_minutes() is not None
     )
-    summary_text, narration_source = narrate(
-        proposal.changes, proposal.diagnostics, settings, store
+
+    # Non-blocking incidents (cast delay, weather w/o location, etc.) go straight
+    # to a single review page — the sandbox only meaningfully differs when a
+    # location is actually blocked.
+    if not has_blocking:
+        proposal = replan(
+            production,
+            st.rbc,
+            completed_scene_ids=[c for c in (completed or []) if c],
+            incident=incident,
+            now_minutes=now_minutes,
+            plan_id=plan_id,
+            created_at=utc_now_iso(),
+        )
+        summary_text, narration_source = narrate(
+            proposal.changes, proposal.diagnostics, settings, store
+        )
+        t1 = time.perf_counter()
+        payload = proposal_to_dict(proposal)
+        payload["narration"] = {"text": summary_text, "source": narration_source}
+        payload["now_minutes"] = now_minutes
+        payload["recovery_seconds"] = max(round(t1 - t0, 2), 0.05)
+        store.save_plan(payload)
+        return RedirectResponse(f"/plans/{plan_id}", status_code=303)
+
+    # Blocking incident → generate every recovery strategy as a sandbox group.
+    group_id = uuid.uuid4().hex[:12]
+    for strategy_id in STRATEGIES:
+        option_id = uuid.uuid4().hex[:12]
+        proposal = replan(
+            production,
+            st.rbc,
+            completed_scene_ids=[c for c in (completed or []) if c],
+            incident=incident,
+            now_minutes=now_minutes,
+            plan_id=option_id,
+            created_at=utc_now_iso(),
+            strategy=strategy_id,
+            group_id=group_id,
+        )
+        payload = proposal_to_dict(proposal)
+        payload["now_minutes"] = now_minutes
+        store.save_plan(payload)
+    recovery_seconds = max(round(time.perf_counter() - t0, 2), 0.05)
+    for option in store.plans_in_group(group_id):
+        option["recovery_seconds"] = recovery_seconds
+        store.save_plan(option)
+    return RedirectResponse(f"/sandbox/{group_id}", status_code=303)
+
+
+@router.get("/sandbox/{group_id}")
+def sandbox(request: Request, group_id: str, msg: str = ""):
+    st = request.app.state
+    plans = st.store.plans_in_group(group_id)
+    if not plans:
+        return PlainTextResponse("Unknown scenario.", status_code=404)
+    order_index = {sid: i for i, sid in enumerate(STRATEGIES)}
+    options = []
+    for p in plans:
+        stats = option_stats(p)
+        strat = STRATEGIES.get(stats["strategy"])
+        stats["strategy_label"] = strat.name if strat else stats["strategy"]
+        stats["tagline"] = strat.tagline if strat else ""
+        stats["plan"] = p
+        options.append(stats)
+    options.sort(key=lambda o: order_index.get(o["strategy"], 99))
+    published_id = next(
+        (p["id"] for p in plans if p["status"].startswith("published")), None
     )
-    payload = proposal_to_dict(proposal)
-    payload["narration"] = {"text": summary_text, "source": narration_source}
-    payload["now_minutes"] = now_minutes
-    store.save_plan(payload)
+    return st.templates.TemplateResponse(
+        request,
+        "sandbox.html",
+        {
+            "group_id": group_id,
+            "incident": plans[0].get("incident", {}),
+            "recovery_stat": _recovery_stat(plans[0], st.settings),
+            "options": options,
+            "published_id": published_id,
+            "msg": msg,
+        },
+    )
+
+
+@router.post("/plans/{plan_id}/select")
+async def select_option(request: Request, plan_id: str):
+    st = request.app.state
+    plan = st.store.get_plan(plan_id)
+    if plan is None:
+        return PlainTextResponse("Unknown plan.", status_code=404)
+    group_id = plan.get("group_id") or ""
+    if not group_id:
+        return RedirectResponse(f"/plans/{plan_id}", status_code=303)
+    if st.store.group_has_published(group_id):
+        return RedirectResponse(
+            f"/sandbox/{group_id}?msg=Scenario+already+published", status_code=303
+        )
+    if not plan.get("narration"):
+        summary_text, narration_source = narrate_plan(plan, st.settings, st.store)
+        plan["narration"] = {"text": summary_text, "source": narration_source}
+    plan["status"] = "proposed"
+    st.store.save_plan(plan)
+    for other in st.store.plans_in_group(group_id):
+        if other["id"] != plan_id and other["status"] == "proposed":
+            st.store.set_plan_status(other["id"], "alternative")
     return RedirectResponse(f"/plans/{plan_id}", status_code=303)
 
 
@@ -166,6 +283,7 @@ def plan_diff(request: Request, plan_id: str, msg: str = ""):
     baseline_rows = timeline_rows(plan["baseline_timeline"], st.production)
     proposed_rows = timeline_rows(plan["proposed_timeline"], st.production)
     moved_ids = {c["scene_id"] for c in plan["changes"] if c.get("scene_id")}
+    recovery_stat = _recovery_stat(plan, st.settings)
     return st.templates.TemplateResponse(
         request,
         "plan_diff.html",
@@ -174,6 +292,7 @@ def plan_diff(request: Request, plan_id: str, msg: str = ""):
             "baseline_rows": baseline_rows,
             "proposed_rows": proposed_rows,
             "moved_ids": moved_ids,
+            "recovery_stat": recovery_stat,
             "msg": msg,
         },
     )
@@ -187,6 +306,18 @@ async def publish_plan(request: Request, plan_id: str, acknowledge: str = ""):
         return PlainTextResponse("Unknown plan.", status_code=404)
 
     status = "published_override" if acknowledge == "1" else "published"
+    # Narrate on publish if the option was published directly without selection.
+    if not plan.get("narration"):
+        summary_text, narration_source = narrate_plan(plan, st.settings, st.store)
+        plan["narration"] = {"text": summary_text, "source": narration_source}
+        st.store.save_plan(plan)
+
+    group_id = plan.get("group_id") or ""
+    if group_id:
+        for other in st.store.plans_in_group(group_id):
+            if other["id"] != plan_id and other["status"] == "proposed":
+                st.store.set_plan_status(other["id"], "alternative")
+
     st.store.set_plan_status(plan_id, status)
 
     # Regenerate per-person links + QR codes into /static/qr/.

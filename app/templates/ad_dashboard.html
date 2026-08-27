@@ -75,6 +75,12 @@
 </div>
 {% endif %}
 
+{% if recovery_stat %}
+<div class="banner">
+  <div><strong>Speed benchmark:</strong> Recovered latest plan in {{ recovery_stat.display }} vs manual baseline of {{ recovery_stat.baseline_display }} ({{ recovery_stat.speedup_display }}).</div>
+</div>
+{% endif %}
+
 <div class="section-heading"><h2>Crew &amp; cast call times</h2></div>
 <div class="panel table-panel">
 <table class="responsive">

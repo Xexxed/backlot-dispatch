@@ -74,3 +74,29 @@ def changes_view(changes: list[Change]) -> list[dict]:
 
 def diagnostics_view(diagnostics: list[Diagnostic]) -> list[dict]:
     return [asdict(d) for d in diagnostics]
+
+
+def option_stats(plan: dict) -> dict:
+    """Sandbox comparison metrics for one recovery-option payload."""
+    rows = _slot_rows(plan.get("proposed_timeline") or [])
+    base_rows = _slot_rows(plan.get("baseline_timeline") or [])
+    wrap = max((r["end"] for r in rows), default=plan.get("now_minutes") or 0)
+    base_wrap = max((r["end"] for r in base_rows), default=wrap)
+    lunch = next((r["start"] for r in rows if r["item_id"] == MEAL_ID), None)
+    diagnostics = plan.get("diagnostics") or []
+    delta = wrap - base_wrap
+    return {
+        "strategy": plan.get("strategy") or "minimal",
+        "status": plan.get("status", "proposed"),
+        "moves": sum(1 for c in plan.get("changes") or [] if c.get("kind") == "MOVE"),
+        "wrap_hhmm": minutes_to_hhmm(wrap),
+        "wrap_delta": delta,
+        "wrap_delta_display": (
+            f"+{delta}m" if delta > 0 else (f"{delta}m" if delta < 0 else "on time")
+        ),
+        "lunch_hhmm": minutes_to_hhmm(lunch) if lunch is not None else None,
+        "is_feasible": bool(plan.get("is_feasible")),
+        "error_count": sum(1 for d in diagnostics if d.get("severity") == "ERROR"),
+        "diagnostics": diagnostics,
+        "changes": plan.get("changes") or [],
+    }

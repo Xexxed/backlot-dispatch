@@ -64,3 +64,21 @@ def settings():
     s.replit_domains = []
     yield s
     s.db_path.unlink(missing_ok=True)
+
+
+@pytest.fixture()
+def client(settings, production, rbc):
+    from app.store import Store
+    from app.web import create_app
+    from fastapi.testclient import TestClient
+
+    store = Store(settings.db_path)
+    app = create_app(
+        settings=settings,
+        production=production,
+        rulebook_ctx=rbc,
+        store=store,
+    )
+    with TestClient(app) as c:
+        yield c
+    store.close()  # release the sqlite file before settings teardown unlinks it

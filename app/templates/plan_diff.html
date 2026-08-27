@@ -6,10 +6,25 @@
     <h1>Plan review <span class="heading-meta">{{ plan.id }}</span></h1>
   </div>
   <span class="chip {{ 'ok' if plan.is_feasible else 'err' }}">{{ 'FEASIBLE' if plan.is_feasible else 'NEEDS ATTENTION' }}</span>
+  {% if plan.group_id %}
+  <span class="chip info">{{ plan.strategy }}</span>
+  {% endif %}
 </div>
+
+{% if plan.group_id %}
+<div class="banner" style="margin-top:0.75rem;">
+  <strong>What-if sandbox</strong> — this is one of several recovery options for the same incident.
+  <a class="small" href="/sandbox/{{ plan.group_id }}">Compare all recovery options →</a>
+</div>
+{% endif %}
 
 <div class="banner">
   <strong>What changed &amp; why</strong> <span class="chip">narrator: {{ plan.narration.source if plan.narration else 'template' }}</span>
+  {% if recovery_stat %}
+  <div style="margin: 0.5rem 0; font-size: 0.95rem;">
+    <strong>Agent pipeline:</strong> {{ recovery_stat.display }} · <strong>Manual baseline:</strong> {{ recovery_stat.baseline_display }} ({{ recovery_stat.speedup_display }}) <span class="muted small">(configurable industry assumption)</span>
+  </div>
+  {% endif %}
   <pre>{{ plan.narration.text if plan.narration else '' }}</pre>
 </div>
 
@@ -65,6 +80,11 @@
   {% if plan.status in ('published', 'published_override') %}
   <p><span class="chip ok">{{ plan.status }}</span> Crew links and QR codes are live.</p>
   <a class="btn secondary" href="/">← Dashboard</a>
+  {% elif plan.status == 'alternative' %}
+  <p class="muted">This option wasn't selected. You can review it here, but publishing requires selecting it first so the crew sees one coherent plan.</p>
+  <form method="post" action="/plans/{{ plan.id }}/select">
+    <button class="btn" type="submit">Select this option →</button>
+  </form>
   {% elif plan.is_feasible %}
   <form method="post" action="/plans/{{ plan.id }}/publish">
     <button class="btn" type="submit">Publish to crew →</button>

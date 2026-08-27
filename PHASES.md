@@ -10,7 +10,10 @@ Mirrors §4 of the master plan (`../1787534213721-agentic-cinema-hackathon-ideas
 - [x] **Phase 5 — Crew portal**: tokenized personal schedules (HMAC), department views, changelog, ack endpoint, AD dashboard w/ responder status
 - [x] **Phase 6 — Publish flow**: diff view, human approval gate (+acknowledged override), regenerated personal links + QR codes (segno SVG)
 - [ ] **Phase 7 — Voice-note input** (polish; cut if time-boxed): upload audio → Gemini transcription into intake schema
-- [ ] **Phase 8 — Stretch** (only after 1–6 solid): Twilio SMS; programmatic microsite spin-up; ops metrics page
+- [ ] **Phase 8 — Backlog top-up before feature lock** (re-assessed 2026-08-27; see "Needs to be added" in `../1787534213721-agentic-cinema-hackathon-ideas.md`): Tier 1 (sandbox DONE — Phase 8b) = PDF Call Sheet/Exhibit G/DPR export (ReportLab), Excel import, offline crew PWA, plan rollback, token nonces/expiry + ops metrics page + import validation report + incident replay; Tier 2 (only if time) = NL edit intents, crew preferences, weather-aware suggestions (Google Maps Platform, fixture-cached for demo); cut = Movie Magic API, generic UI pass, Twilio SMS, GPS pins/prep windows, penalty-cost engine (skipped 2026-08-27)
+
+- [x] **Phase 8b — What-If Scenario Sandbox**: three deterministic recovery strategies (`minimal` / `cover_set` / `hold`) generated per blocking incident as a sandbox group; `/sandbox/{gid}` comparison cards (wrap, lunch, moves, feasibility, change log) + `/plans/{id}/select` to pick one; narration now runs at selection/publish; legacy plan schema migrated. 81 tests green.
+
 - [x] **Phase 9 prep — Deploy artifacts**: `.env.example`, PORT-aware entrypoint, deployment checklist (below) — actual Replit Agent session + deploy performed by the user on Replit
 - [x] **Phase 10 prep — Submission package**: README demo script, before/after framing, gate audit checklist (below) — video still to be recorded
 

@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block title %}Recovery sandbox — Backlot Dispatch{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <p class="eyebrow">What-if scenario sandbox</p>
+    <h1>Recovery options <span class="heading-meta">{{ group_id }}</span></h1>
+    <p class="page-intro">Three deterministic recovery strategies for the same incident — compare, then pick one to review and publish.</p>
+  </div>
+  <span class="chip {{ 'ok' if not published_id else 'info' }}">{{ 'DECIDED' if published_id else 'OPEN' }}</span>
+</div>
+
+<div class="banner">
+  <strong>Incident:</strong>
+  {{ incident.type }}{% if incident.location_id %} · {{ incident.location_id }}{% endif %}{% if incident.blocked_until %} blocked until {{ incident.blocked_until }}{% endif %}
+  · severity {{ incident.severity }}
+  {% if recovery_stat %}
+  <div class="small" style="margin-top:0.4rem;">Agent pipeline: {{ recovery_stat.display }} (Gemini intake + {{ recovery_stat.baseline_display }} manual baseline · {{ options|length }} deterministic re-plans)</div>
+  {% endif %}
+</div>
+
+<div class="grid three">
+  {% for o in options %}
+  <section class="panel sandbox-card {{ 'is-selected' if o.plan.status == 'proposed' and not published_id }}">
+    <div class="panel-heading">
+      <h3>{{ o.strategy_label }}</h3>
+      {% if o.plan.status in ('published', 'published_override') %}
+        <span class="chip ok">PUBLISHED</span>
+      {% elif o.plan.status == 'proposed' %}
+        <span class="chip ok">SELECTED</span>
+      {% else %}
+        <span class="chip">OPTION</span>
+      {% endif %}
+    </div>
+    <p class="muted small">{{ o.tagline }}</p>
+    <table class="responsive">
+      <tr><td>Wrap</td><td><strong>{{ o.wrap_hhmm }}</strong> <span class="muted small">({{ o.wrap_delta_display }} vs baseline)</span></td></tr>
+      <tr><td>Lunch</td><td>{{ o.lunch_hhmm or '—' }}</td></tr>
+      <tr><td>Scenes moved</td><td>{{ o.moves }}</td></tr>
+      <tr><td>Compliance</td><td>{% if o.is_feasible %}<span class="chip ok">FEASIBLE</span>{% else %}<span class="chip err">{{ o.error_count }} issue{{ 's' if o.error_count != 1 else '' }}</span>{% endif %}</td></tr>
+    </table>
+
+    {% if o.diagnostics %}
+    <ul class="small">
+      {% for d in o.diagnostics if d.severity == 'ERROR' %}
+      <li><span class="chip err">{{ d.rule_id }}</span> {{ d.message }}</li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+
+    {% if o.changes %}
+    <details {% if loop.first %}open{% endif %}>
+      <summary>Change log ({{ o.changes | length }})</summary>
+      <ul class="small">
+        {% for c in o.changes %}<li><span class="chip">{{ c.rule_id }}</span> {{ c.reason }}</li>{% endfor %}
+      </ul>
+    </details>
+    {% else %}
+    <p class="muted small">No schedule changes — day holds original order.</p>
+    {% endif %}
+
+    <div class="card-actions">
+      {% if published_id %}
+        <a class="btn secondary" href="/plans/{{ o.plan.id }}">View plan</a>
+      {% elif o.plan.status == 'proposed' %}
+        <a class="btn" href="/plans/{{ o.plan.id }}">Review &amp; publish →</a>
+      {% else %}
+        <form method="post" action="/plans/{{ o.plan.id }}/select">
+          <button class="btn" type="submit">Select this option</button>
+        </form>
+        <a class="small" href="/plans/{{ o.plan.id }}">view diff</a>
+      {% endif %}
+    </div>
+  </section>
+  {% endfor %}
+</div>
+{% endblock %}

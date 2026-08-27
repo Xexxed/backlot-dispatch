@@ -184,6 +184,8 @@ class Proposal:
     is_feasible: bool
     baseline_timeline: list[TimelineSlot]
     proposed_timeline: list[TimelineSlot]
+    strategy: str = "minimal"  # recovery posture id (see engine.STRATEGIES)
+    group_id: str = ""  # non-empty when part of a what-if sandbox option set
 
     def summary_counts(self) -> dict:
         return {

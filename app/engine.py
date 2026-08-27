@@ -1,18 +1,22 @@
 """Deterministic re-optimizer — pure Python, zero LLM involvement.
 
-Minimal-change heuristic over the remaining shooting day:
+Minimal-change heuristic over the remaining shooting day, parameterized by a
+named recovery STRATEGY (see STRATEGIES / the what-if scenario sandbox):
 
   Pass A  R-BLOCKED-LOCATION : push affected scenes past the blocked window
   Pass B  R-DEPS             : restore dependency order after pushes/swaps
   Pass C  R-DAYLIGHT         : swap endangered EXT/DAY scenes with later INTs
   Pass D  R-MEAL-WINDOW      : place lunch so it starts before the deadline
 
-Passes repeat until stable (bounded). Anything still violating a hard rule is
-surfaced as an explicit ERROR diagnostic via rules.validate_order — this engine
-never returns a silent bad schedule. Every applied change carries a machine-
-checkable rule_id.
+Each strategy enables a different subset of passes over a different seed
+order; passes repeat until stable (bounded). Anything still violating a hard
+rule is surfaced as an explicit ERROR diagnostic via rules.validate_order —
+this engine never returns a silent bad schedule. Every applied change carries
+a machine-checkable rule_id.
 """
 from __future__ import annotations
+
+from dataclasses import dataclass
 
 from app.models import (
     MEAL_ID,
@@ -29,6 +33,65 @@ from app.rules import RULE_DAYLIGHT, validate_order
 from app.timeline import BlockedWindow, PlanContext, build_timeline, clock_after
 
 _MAX_CONVERGENCE_ROUNDS = 8
+
+RULE_COVER_SET = "R-COVER-SET"
+
+
+@dataclass(frozen=True)
+class Strategy:
+    """One named recovery posture: seed order + which repair passes run."""
+
+    id: str
+    name: str
+    tagline: str
+    description: str
+    seed: str  # "pending" (original order) | "blocked_first" (stalled unit first)
+    run_blocked_pass: bool
+    run_deps_pass: bool
+    run_daylight_pass: bool
+
+
+STRATEGIES: dict[str, Strategy] = {
+    "minimal": Strategy(
+        id="minimal",
+        name="Minimal change",
+        tagline="Keep the day as close to the original plan as possible",
+        description=(
+            "Unblocked scenes keep their order and absorb the gap; blocked "
+            "work moves behind them. Fewest scenes touched."
+        ),
+        seed="pending",
+        run_blocked_pass=True,
+        run_deps_pass=True,
+        run_daylight_pass=True,
+    ),
+    "cover_set": Strategy(
+        id="cover_set",
+        name="Cover-set pivot",
+        tagline="Resume the blocked location the moment it clears",
+        description=(
+            "The stalled unit shoots first once the block lifts; everyone "
+            "else shifts later. Protects the blocked department's flow."
+        ),
+        seed="blocked_first",
+        run_blocked_pass=False,
+        run_deps_pass=True,
+        run_daylight_pass=True,
+    ),
+    "hold": Strategy(
+        id="hold",
+        name="Hold & wait",
+        tagline="No reordering — idle through the block",
+        description=(
+            "Nothing moves except lunch. The crew waits out the block and the "
+            "day runs long — the measured cost of doing nothing."
+        ),
+        seed="pending",
+        run_blocked_pass=False,
+        run_deps_pass=False,
+        run_daylight_pass=False,
+    ),
+}
 
 
 # --------------------------------------------------------------------- utils
@@ -220,6 +283,48 @@ def _diagnose(items: list[str], ctx: PlanContext) -> list[Diagnostic]:
 
 
 # --------------------------------------------------------------------- entry
+def _cover_set_seed(
+    order: list[str], ctx: PlanContext, changes: list[Change], seen: set[tuple]
+) -> list[str]:
+    """Blocked-location scenes shoot FIRST once the window clears.
+
+    The timeline builder makes them wait for the window (clock jump), so the
+    stalled unit resumes the moment the location reopens; everyone else
+    follows. Seed changes are recorded under R-COVER-SET.
+    """
+    if not ctx.blocked_windows:
+        return order
+    blocked_locations = {w.location_id for w in ctx.blocked_windows}
+    affected = [s for s in order if ctx.scene(s).location_id in blocked_locations]
+    if not affected:
+        return order
+    others = [s for s in order if ctx.scene(s).location_id not in blocked_locations]
+    candidate = affected + others
+    if candidate == order:
+        return order
+    slots = build_timeline(candidate, ctx)
+    window_end = max(w.end for w in ctx.blocked_windows)
+    for sid in affected:
+        new_start = next(s.start for s in slots if s.item_id == sid)
+        _record(
+            changes,
+            seen,
+            Change(
+                scene_id=sid,
+                kind="MOVE",
+                rule_id=RULE_COVER_SET,
+                reason=(
+                    f"Scene {sid} moved ahead of unblocked work — "
+                    f"{sorted(blocked_locations)[0]} reopens "
+                    f"{minutes_to_hhmm(window_end)}; stalled unit resumes "
+                    f"immediately"
+                ),
+                params={"new_start": new_start, "blocked_until": window_end},
+            ),
+        )
+    return candidate
+
+
 def replan(
     production: Production,
     rbc: RuleBookContext,
@@ -228,7 +333,12 @@ def replan(
     now_minutes: int,
     plan_id: str,
     created_at: str,
+    strategy: str = "minimal",
+    group_id: str = "",
 ) -> Proposal:
+    strat = STRATEGIES.get(strategy)
+    if strat is None:
+        raise ValueError(f"unknown strategy: {strategy!r}")
     done = set(completed_scene_ids)
     pending = [sid for sid in production.scene_order if sid not in done]
 
@@ -274,15 +384,30 @@ def replan(
 
     order = list(pending)
     if pending:
-        for _ in range(_MAX_CONVERGENCE_ROUNDS):
-            snapshot = tuple(order)
-            order, c_block = _repair_blocked(order, ctx)
-            order, c_deps = _repair_dependencies(order, production)
-            order, c_day = _repair_daylight(order, ctx)
-            for c in c_block + c_deps + c_day:
-                _record(changes, seen, c)
-            if tuple(order) == snapshot:
-                break
+        if strat.seed == "blocked_first":
+            order = _cover_set_seed(order, ctx, changes, seen)
+
+        enabled = (
+            strat.run_blocked_pass,
+            strat.run_deps_pass,
+            strat.run_daylight_pass,
+        )
+        if any(enabled):
+            for _ in range(_MAX_CONVERGENCE_ROUNDS):
+                snapshot = tuple(order)
+                c_block: list[Change] = []
+                c_deps: list[Change] = []
+                c_day: list[Change] = []
+                if strat.run_blocked_pass:
+                    order, c_block = _repair_blocked(order, ctx)
+                if strat.run_deps_pass:
+                    order, c_deps = _repair_dependencies(order, production)
+                if strat.run_daylight_pass:
+                    order, c_day = _repair_daylight(order, ctx)
+                for c in c_block + c_deps + c_day:
+                    _record(changes, seen, c)
+                if tuple(order) == snapshot:
+                    break
 
         k_meal = _meal_index(order, ctx)
         k_baseline = _meal_index(pending, base_ctx)
@@ -330,4 +455,6 @@ def replan(
         is_feasible=is_feasible,
         baseline_timeline=build_timeline(baseline_items, base_ctx),
         proposed_timeline=build_timeline(proposed_items, ctx),
+        strategy=strat.id,
+        group_id=group_id,
     )

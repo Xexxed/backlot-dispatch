@@ -84,3 +84,12 @@ def narrate(
                 meta={"error": str(exc)[:300]},
             )
         return fallback, "template"
+
+
+def narrate_plan(
+    plan: dict, settings: Settings, store: Store | None = None
+) -> tuple[str, str]:
+    """Narrate a stored plan payload (dicts) — reconstruct dataclasses first."""
+    changes = [Change(**c) for c in plan.get("changes") or []]
+    diagnostics = [Diagnostic(**d) for d in plan.get("diagnostics") or []]
+    return narrate(changes, diagnostics, settings, store)

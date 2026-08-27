@@ -32,6 +32,8 @@ def client(settings, production, rbc):
 
 
 def _make_plan(client: TestClient) -> str:
+    """Blocking incident now routes to the sandbox; select an option and return
+    the chosen plan id so the publish path under test still has a real plan."""
     response = client.post(
         "/incident",
         data={
@@ -47,7 +49,11 @@ def _make_plan(client: TestClient) -> str:
         follow_redirects=False,
     )
     assert response.status_code == 303, response.text
-    return response.headers["location"].rsplit("/", 1)[-1]
+    gid = response.headers["location"].rsplit("/", 1)[-1]
+    plan_id = client.app.state.store.plans_in_group(gid)[0]["id"]
+    sel = client.post(f"/plans/{plan_id}/select", follow_redirects=False)
+    assert sel.status_code == 303
+    return plan_id
 
 
 def _capture_segno_payloads(monkeypatch):
