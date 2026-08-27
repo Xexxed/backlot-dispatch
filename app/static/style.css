@@ -92,6 +92,7 @@ nav a {
   font-size: 0.8rem;
   font-weight: 600;
   letter-spacing: 0.02em;
+  white-space: nowrap;
   text-decoration: none;
 }
 nav a:hover { color: var(--ink); background: var(--panel); }
@@ -438,7 +439,8 @@ footer.site {
 
 @media (max-width: 719px) {
   header.site { min-height: 58px; padding: 10px 16px; }
-  nav a { padding: 6px 5px; font-size: 0.69rem; }
+  nav { gap: 2px; }
+  nav a { padding: 6px 4px; font-size: 0.69rem; }
   .brand { font-size: 0.83rem; }
   .brand-mark { width: 24px; height: 24px; }
   main { padding-top: 28px; }
