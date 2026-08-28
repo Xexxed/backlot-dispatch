@@ -44,6 +44,24 @@ class _IncidentOut(BaseModel):
     confidence: float = Field(default=1.0, ge=0.0, le=1.0)
 
 
+def _sampling_kwargs(settings: Settings, temperature: float = 0.0) -> dict:
+    """Generation-config kwargs valid for both Gemini 2.5 and 3.x models.
+
+    Gemini 3.x models reject/ignore temperature, top-P and top-K; reasoning
+    effort is steered with thinking_level instead. Older models keep the
+    temperature knob. Requires google-genai >= 2.20 for ThinkingConfig.
+    """
+    from google.genai import types  # lazy: keep offline runs dependency-light
+
+    if settings.gemini_model.startswith("gemini-3"):
+        return {
+            "thinking_config": types.ThinkingConfig(
+                thinking_level=settings.gemini_thinking_level
+            )
+        }
+    return {"temperature": temperature}
+
+
 def _system_prompt(locations: dict[str, Location]) -> str:
     loc_lines = "\n".join(f"- {loc.id}: {loc.name}" for loc in locations.values())
     return (
@@ -126,8 +144,13 @@ def parse_incident(
 
     try:
         if settings.use_vertexai:
+            # Gemini 3.x models resolve via the global endpoint (see
+            # settings.gemini_location); enterprise=True selects the
+            # Gemini Enterprise Agent Platform (formerly Vertex AI) API.
             client = genai.Client(
-                vertexai=True, project=settings.project_id, location="us-central1"
+                enterprise=True,
+                project=settings.project_id,
+                location=settings.gemini_location,
             )
         else:
             client = genai.Client(api_key=settings.api_key)
@@ -143,7 +166,7 @@ def parse_incident(
                 system_instruction=_system_prompt(locations),
                 response_mime_type="application/json",
                 response_schema=_IncidentOut,
-                temperature=0.0,
+                **_sampling_kwargs(settings),
             ),
         )
         latency_ms = int((time.perf_counter() - started) * 1000)

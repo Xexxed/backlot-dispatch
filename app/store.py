@@ -136,6 +136,21 @@ class Store:
             ).fetchone()
         return json.loads(row["payload_json"]) if row else None
 
+    def previous_published_plan(self) -> dict | None:
+        """The most recently published plan that was later superseded — the
+        rollback target. Returns None when there is nothing to revert to."""
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT payload_json, status, group_id FROM plans "
+                "WHERE status = 'superseded' ORDER BY created_at DESC LIMIT 1"
+            ).fetchone()
+        if row is None:
+            return None
+        payload = json.loads(row["payload_json"])
+        payload["status"] = row["status"]
+        payload["group_id"] = row["group_id"]
+        return payload
+
     def list_plans(self, limit: int = 20) -> list[dict]:
         with self._lock:
             rows = self._conn.execute(

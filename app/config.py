@@ -64,8 +64,16 @@ def ensure_gcp_credentials() -> None:
             return
 
         path = Path(_env("GCP_SA_FILE", "instance/gcp-service-account.json"))
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(cleaned, encoding="utf-8")
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(cleaned, encoding="utf-8")
+        except OSError:
+            # Read-only filesystem (e.g. Replit autoscale deployments only
+            # allow /tmp): fall back to the OS temp dir.
+            import tempfile
+
+            path = Path(tempfile.gettempdir()) / "gcp-service-account.json"
+            path.write_text(cleaned, encoding="utf-8")
         os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = str(path)
 
 
@@ -76,7 +84,13 @@ class Settings:
         self.project_id = _env("GOOGLE_CLOUD_PROJECT")
         self.use_vertexai = _env("GOOGLE_GENAI_USE_VERTEXAI", "true").lower() == "true"
         self.api_key = _env("GOOGLE_API_KEY")
-        self.gemini_model = _env("GEMINI_MODEL", "gemini-2.5-flash")
+        self.gemini_model = _env("GEMINI_MODEL", "gemini-3.7-flash")
+        # Gemini 3.x models resolve via the global endpoint, not a regional
+        # one (us-central1 etc. cannot resolve the 3.x model ids).
+        self.gemini_location = _env("GOOGLE_CLOUD_LOCATION", "global")
+        # Gemini 3.x ignores temperature/top-P/top-K; reasoning effort is
+        # steered via thinking_level (MINIMAL/LOW/MEDIUM/HIGH).
+        self.gemini_thinking_level = _env("GEMINI_THINKING_LEVEL", "LOW").upper()
         self.app_secret = _env("APP_SECRET", "dev-secret-not-for-production")
         self.day_start = _env("DAY_START", "07:00")
         self.manual_recovery_baseline_minutes = int(_env("MANUAL_RECOVERY_BASELINE_MINUTES", "90"))

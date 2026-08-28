@@ -9,7 +9,7 @@
 </div>
 
 <section class="panel incident-panel">
-  <div class="section-heading"><h2>Report a disruption</h2></div>
+  <div class="section-heading"><h2>Report a disruption <a class="small" href="/edit">· or request a schedule edit →</a></h2></div>
   <p class="page-intro">Describe the problem in plain language. The intake agent will translate it into a safe, reviewable recovery plan.</p>
   <form method="post" action="/incident">
     <label for="free_text">What happened?</label>
@@ -71,7 +71,14 @@
 {% if published %}
 <div class="banner live-banner">
   <div><strong>Live plan:</strong> {{ published.id }} published · {{ ack_count }}/{{ total_people }} acknowledgments.</div>
-  <div><a href="/plans/{{ published.id }}">Review diff</a> · <a href="/changelog">Changelog</a></div>
+  <div><a href="/plans/{{ published.id }}">Review diff</a> · <a href="/changelog">Changelog</a>
+  {% if prior_plan %}
+  · <form method="post" action="/plans/{{ prior_plan.id }}/revert" style="display:inline;"
+      onsubmit="return confirm('Revert to previous plan {{ prior_plan.id }}? Crew links will show its call times again.')">
+    <button class="btn secondary small" type="submit">↩ Revert to {{ prior_plan.id }}</button>
+  </form>
+  {% endif %}
+  </div>
 </div>
 {% endif %}
 

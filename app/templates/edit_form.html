@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <p class="eyebrow">Schedule edits / AD command</p>
+    <h1>Request a schedule edit</h1>
+    <p class="page-intro">Describe the change in plain language. The editor agent turns it into structured intents; the deterministic engine applies them — and every edit still passes the union-rule gate before you publish.</p>
+  </div>
+</div>
+{% if fallback_reason %}
+<div class="banner warn">
+  <strong>Editor agent handed off:</strong> {{ fallback_reason }}
+</div>
+{% endif %}
+{% if error %}
+<div class="banner warn">
+  <strong>Edit rejected:</strong> {{ error }}
+</div>
+{% endif %}
+<form class="panel" method="post" action="/edit">
+  <label for="free_text">What should change?</label>
+  <textarea id="free_text" name="free_text" rows="4"
+    placeholder='e.g. "Move SC-118 to the end of the day", "Shoot SC-121 at the ranch instead", "Add a 2-page pickup shot at Stage 4"'>{{ free_text }}</textarea>
+
+  <details>
+    <summary>Manual edit (fallback)</summary>
+    <div class="grid two">
+      <div>
+        <label>Action</label>
+        <select name="manual_action">
+          <option value="">— none —</option>
+          <option value="move_scene">Move a scene</option>
+          <option value="swap_location">Relocate a scene</option>
+          <option value="add_scene">Add a new scene</option>
+        </select>
+        <label>Scene (move / relocate)</label>
+        <select name="manual_scene">
+          <option value="">— none —</option>
+          {% for sid in scene_order %}
+          <option value="{{ sid }}">{{ sid }} · {{ scenes[sid].title }}</option>
+          {% endfor %}
+        </select>
+        <label>Place it after (blank = end of day)</label>
+        <select name="manual_ref_scene">
+          <option value="">— end of day —</option>
+          {% for sid in scene_order %}
+          <option value="{{ sid }}">{{ sid }} · {{ scenes[sid].title }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label>Location (relocate target / new scene)</label>
+        <select name="manual_location">
+          <option value="">— none —</option>
+          {% for loc in locations.values() %}
+          <option value="{{ loc.id }}">{{ loc.id }} · {{ loc.name }}</option>
+          {% endfor %}
+        </select>
+        <label>New scene title</label>
+        <input type="text" name="manual_title" placeholder="Pickup shot">
+        <label>New scene pages</label>
+        <input type="number" name="manual_pages" min="0.5" step="0.5" value="1">
+        <label>INT / EXT</label>
+        <select name="manual_int_ext"><option>INT</option><option>EXT</option></select>
+        <label>DAY / NIGHT</label>
+        <select name="manual_day_night"><option>DAY</option><option>NIGHT</option></select>
+        <label>Demo clock “now” (HH:MM)</label>
+        <input type="time" name="now_override">
+      </div>
+    </div>
+    <label>Skip agent — apply the manual edit above</label>
+    <select name="force_manual"><option value="">No — run editor agent</option>
+      <option value="1">Yes — apply manual edit</option></select>
+    <label>Scenes already shot (excluded from the edit)</label>
+    <div class="small muted">
+      {% for sid in scene_order %}{{ sid }}{% if not loop.last %}, {% endif %}{% endfor %}
+    </div>
+    {% set chunk = 8 %}
+    {% for start in range(0, scene_order | length, chunk) %}
+    <div class="grid scene-checks">
+      {% for sid in scene_order[start:start+chunk] %}
+      <label class="scene-toggle">
+        <input type="checkbox" name="completed" value="{{ sid }}">{{ sid }}
+      </label>
+      {% endfor %}
+    </div>
+    {% endfor %}
+  </details>
+  <div class="form-actions"><button class="btn" type="submit">Apply edit → review plan</button></div>
+</form>
+{% endblock %}

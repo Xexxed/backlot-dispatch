@@ -130,6 +130,35 @@ class Incident(BaseModel):
         return hhmm_to_minutes(self.blocked_until)
 
 
+# ------------------------------------------------------- edit intents (pydantic)
+EDIT_ACTIONS = ("move_scene", "swap_location", "add_scene")
+
+
+class EditIntent(BaseModel):
+    """A structured schedule edit requested by the AD.
+
+    The editor agent (or the manual fallback form) only ever produces this
+    intent object; the mutation itself is applied by the deterministic engine
+    (app/edit_ops.py) — the narration-only rule extends to edits.
+    """
+
+    action: str = Field(description=f"One of: {', '.join(EDIT_ACTIONS)}")
+    scene_id: str | None = Field(default=None, description="move/swap: exact scene id")
+    ref_scene_id: str | None = Field(
+        default=None, description="place the scene AFTER this scene id; null = end of day"
+    )
+    new_location_id: str | None = Field(
+        default=None, description="swap_location: exact target location id"
+    )
+    title: str | None = Field(default=None, description="add_scene: short scene title")
+    page_count: float = Field(default=1.0, gt=0, description="add_scene: script pages")
+    location_id: str | None = Field(default=None, description="add_scene: exact location id")
+    int_ext: str = Field(default="INT", description="add_scene: INT or EXT")
+    day_night: str = Field(default="DAY", description="add_scene: DAY or NIGHT")
+    confidence: float = Field(default=1.0, ge=0.0, le=1.0)
+    source: str = "gemini"  # gemini | manual_form
+
+
 # --------------------------------------------- optimizer output structures
 @dataclass
 class Change:

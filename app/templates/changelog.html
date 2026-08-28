@@ -27,10 +27,17 @@
 <div class="section-heading"><h2>All plans</h2></div>
 <div class="panel table-panel">
 <table class="responsive">
-  <tr><th scope="col">Plan</th><th scope="col">Created</th><th scope="col">Status</th><th scope="col">View</th></tr>
+  <tr><th scope="col">Plan</th><th scope="col">Created</th><th scope="col">Status</th><th scope="col">Actions</th></tr>
   {% for pl in plans %}
-  <tr><td data-label="Plan">{{ pl.id }}</td><td data-label="Created">{{ pl.created_at }}</td><td data-label="Status"><span class="chip">{{ pl.status }}</span></td>
-      <td data-label="View"><a href="/plans/{{ pl.id }}">Open plan</a></td></tr>
+  <tr><td data-label="Plan">{{ pl.id }}</td><td data-label="Created">{{ pl.created_at }}</td><td data-label="Status"><span class="chip {{ 'ok' if pl.status.startswith('published') }}">{{ pl.status }}</span></td>
+      <td data-label="Actions"><a href="/plans/{{ pl.id }}">Open plan</a>
+      {% if pl.status == 'superseded' %}
+      · <form method="post" action="/plans/{{ pl.id }}/revert" style="display:inline;"
+          onsubmit="return confirm('Revert to plan {{ pl.id }}? It becomes the live plan for all crew links.')">
+        <button class="btn secondary small" type="submit">↩ Revert</button>
+      </form>
+      {% endif %}
+      </td></tr>
   {% else %}<tr><td colspan="4" class="muted">No plans yet.</td></tr>{% endfor %}
 </table>
 </div>

@@ -10,10 +10,12 @@ import segno
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import PlainTextResponse, RedirectResponse
 
+from app.agents.editor import FallbackRequired as EditFallback, manual_edit_intent, parse_edit_intents
 from app.agents.intake import FallbackRequired, parse_incident
 from app.agents.narrator import narrate, narrate_plan
+from app.edit_ops import EditError, apply_edits
 from app.engine import STRATEGIES, baseline_context, replan
-from app.models import Incident, hhmm_to_minutes
+from app.models import EDIT_ACTIONS, Incident, hhmm_to_minutes
 from app.schedule_view import changes_for_person, compute_calls
 from app.serialize import option_stats, proposal_to_dict, timeline_rows
 from app.store import utc_now_iso
@@ -92,6 +94,7 @@ def dashboard(request: Request, msg: str = ""):
     plans = store.list_plans()
     latest_plan = published or (store.get_plan(plans[0]["id"]) if plans else None)
     recovery_stat = _recovery_stat(latest_plan, st.settings)
+    prior_plan = store.previous_published_plan()
 
     return st.templates.TemplateResponse(
         request,
@@ -100,6 +103,7 @@ def dashboard(request: Request, msg: str = ""):
             "production": production,
             "baseline_rows": baseline_rows,
             "published": published,
+            "prior_plan": prior_plan,
             "plans": plans,
             "people": people,
             "departments": production.departments,
@@ -217,6 +221,99 @@ async def create_incident(
     return RedirectResponse(f"/sandbox/{group_id}", status_code=303)
 
 
+def _edit_response(
+    request: Request,
+    st,
+    free_text: str = "",
+    fallback_reason: str | None = None,
+    error: str | None = None,
+):
+    return st.templates.TemplateResponse(
+        request,
+        "edit_form.html",
+        {
+            "locations": st.production.locations,
+            "scenes": st.production.scenes,
+            "scene_order": st.production.scene_order,
+            "free_text": free_text,
+            "fallback_reason": fallback_reason,
+            "error": error,
+        },
+    )
+
+
+@router.get("/edit")
+def edit_form(request: Request):
+    return _edit_response(request, request.app.state)
+
+
+@router.post("/edit")
+async def create_edit(
+    request: Request,
+    free_text: Annotated[str, Form()] = "",
+    force_manual: Annotated[str, Form()] = "",
+    manual_action: Annotated[str, Form()] = "",
+    manual_scene: Annotated[str, Form()] = "",
+    manual_ref_scene: Annotated[str, Form()] = "",
+    manual_location: Annotated[str, Form()] = "",
+    manual_title: Annotated[str, Form()] = "",
+    manual_pages: Annotated[str, Form()] = "1",
+    manual_int_ext: Annotated[str, Form()] = "INT",
+    manual_day_night: Annotated[str, Form()] = "DAY",
+    completed: Annotated[list[str] | None, Form()] = None,
+    now_override: Annotated[str, Form()] = "",
+):
+    st = request.app.state
+    settings, production, store = st.settings, st.production, st.store
+
+    try:
+        if force_manual == "1":
+            if manual_action not in EDIT_ACTIONS:
+                return _edit_response(
+                    request, st, free_text=free_text,
+                    error="Pick an edit action (move, relocate, or add).",
+                )
+            edits = [
+                manual_edit_intent(
+                    action=manual_action,
+                    scene_id=manual_scene,
+                    ref_scene_id=manual_ref_scene,
+                    new_location_id=manual_location,
+                    title=manual_title,
+                    page_count=manual_pages,
+                    location_id=manual_location,
+                    int_ext=manual_int_ext,
+                    day_night=manual_day_night,
+                )
+            ]
+        else:
+            edits = parse_edit_intents(free_text, settings, production, store)
+
+        now_minutes = _now_minutes(now_override or None)
+        proposal = apply_edits(
+            production,
+            st.rbc,
+            completed_scene_ids=[c for c in (completed or []) if c],
+            edits=edits,
+            now_minutes=now_minutes,
+            plan_id=uuid.uuid4().hex[:12],
+            created_at=utc_now_iso(),
+        )
+    except EditFallback as fr:
+        return _edit_response(request, st, free_text=free_text, fallback_reason=fr.reason)
+    except EditError as ee:
+        return _edit_response(request, st, free_text=free_text, error=str(ee))
+
+    summary_text, narration_source = narrate(
+        proposal.changes, proposal.diagnostics, settings, store
+    )
+    payload = proposal_to_dict(proposal)
+    payload["narration"] = {"text": summary_text, "source": narration_source}
+    payload["now_minutes"] = now_minutes
+    store.save_plan(payload)
+    return RedirectResponse(f"/plans/{proposal.id}", status_code=303)
+
+
 @router.get("/sandbox/{group_id}")
 def sandbox(request: Request, group_id: str, msg: str = ""):
     st = request.app.state
@@ -318,6 +415,12 @@ async def publish_plan(request: Request, plan_id: str, acknowledge: str = ""):
             if other["id"] != plan_id and other["status"] == "proposed":
                 st.store.set_plan_status(other["id"], "alternative")
 
+    # Versioning: the previously live plan is kept (superseded) as the
+    # one-click rollback target — agents propose, humans can undo.
+    current = st.store.latest_published_plan()
+    if current and current["id"] != plan_id:
+        st.store.set_plan_status(current["id"], "superseded")
+
     st.store.set_plan_status(plan_id, status)
 
     # Regenerate per-person links + QR codes into /static/qr/.
@@ -332,6 +435,37 @@ async def publish_plan(request: Request, plan_id: str, acknowledge: str = ""):
         )
     note = "" if status == "published" else "+with+acknowledged+violations"
     return RedirectResponse(f"/?msg=Plan+{plan_id}+published{note}", status_code=303)
+
+
+@router.post("/plans/{plan_id}/revert")
+async def revert_plan(request: Request, plan_id: str):
+    """One-click rollback: restore a previously published (superseded) plan as
+    the live one. Crew links are token-based and the portal renders whatever
+    plan is currently published, so this swaps instantly — then QR artifacts
+    are regenerated for consistency."""
+    st = request.app.state
+    plan = st.store.get_plan(plan_id)
+    if plan is None:
+        return PlainTextResponse("Unknown plan.", status_code=404)
+    if plan["status"].startswith("published"):
+        return RedirectResponse(
+            f"/?msg=Plan+{plan_id}+is+already+the+live+plan", status_code=303
+        )
+
+    current = st.store.latest_published_plan()
+    if current and current["id"] != plan_id:
+        st.store.set_plan_status(current["id"], "superseded")
+    st.store.set_plan_status(plan_id, "published")
+
+    base = st.settings.external_base_url or str(request.base_url).rstrip("/")
+    for token in st.token_index:
+        url = f"{base}/c/{token}"
+        segno.make(url, error="m").save(
+            str(STATIC_DIR / "qr" / f"{token}.svg"), kind="svg", scale=4, border=2
+        )
+    return RedirectResponse(
+        f"/?msg=Reverted+to+plan+{plan_id}+-+crew+links+live+again", status_code=303
+    )
 
 
 @router.get("/changelog")

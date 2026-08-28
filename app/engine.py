@@ -335,12 +335,20 @@ def replan(
     created_at: str,
     strategy: str = "minimal",
     group_id: str = "",
+    seed_order: list[str] | None = None,
+    baseline_order_override: list[str] | None = None,
+    extra_changes: list[Change] | None = None,
 ) -> Proposal:
     strat = STRATEGIES.get(strategy)
     if strat is None:
         raise ValueError(f"unknown strategy: {strategy!r}")
     done = set(completed_scene_ids)
-    pending = [sid for sid in production.scene_order if sid not in done]
+    seed = seed_order if seed_order is not None else production.scene_order
+    baseline_source = (
+        baseline_order_override if baseline_order_override is not None else production.scene_order
+    )
+    pending = [sid for sid in seed if sid not in done]
+    baseline_pending = [sid for sid in baseline_source if sid not in done]
 
     base_ctx = baseline_context(production, rbc)
 
@@ -362,8 +370,8 @@ def replan(
         blocked_windows=windows,
     )
 
-    changes: list[Change] = []
-    seen: set[tuple] = set()
+    changes: list[Change] = list(extra_changes or [])
+    seen: set[tuple] = {(c.scene_id, c.rule_id, c.kind) for c in changes}
     if windows:
         w = windows[0]
         _record(
@@ -410,7 +418,7 @@ def replan(
                     break
 
         k_meal = _meal_index(order, ctx)
-        k_baseline = _meal_index(pending, base_ctx)
+        k_baseline = _meal_index(baseline_pending, base_ctx)
         # Only report a meal move when something actually changed operationally;
         # identical order + no block means the same physical lunch slot stands.
         if k_meal != k_baseline and (windows or order != pending):
@@ -435,7 +443,7 @@ def replan(
         k_baseline = 0
 
     proposed_items = order[:k_meal] + [MEAL_ID] + order[k_meal:]
-    baseline_items = pending[:k_baseline] + [MEAL_ID] + pending[k_baseline:]
+    baseline_items = baseline_pending[:k_baseline] + [MEAL_ID] + baseline_pending[k_baseline:]
 
     diagnostics = _diagnose(proposed_items, ctx)
     is_feasible = not any(d.severity == "ERROR" for d in diagnostics)
@@ -446,7 +454,7 @@ def replan(
         incident=incident.model_dump(),
         now_minutes=now_minutes,
         completed_scene_ids=sorted(done),
-        baseline_order=pending,
+        baseline_order=baseline_pending,
         proposed_order=order,
         meal_after_index=k_meal,
         baseline_meal_after_index=k_baseline,

@@ -6,6 +6,7 @@ template-based summary (deterministic, always correct) is used instead.
 """
 from __future__ import annotations
 
+from app.agents.intake import _sampling_kwargs
 from app.config import Settings
 from app.models import Change, Diagnostic
 from app.store import Store
@@ -56,8 +57,13 @@ def narrate(
     )
     try:
         if settings.use_vertexai:
+            # Gemini 3.x models resolve via the global endpoint (see
+            # settings.gemini_location); enterprise=True selects the
+            # Gemini Enterprise Agent Platform (formerly Vertex AI) API.
             client = genai.Client(
-                vertexai=True, project=settings.project_id, location="us-central1"
+                enterprise=True,
+                project=settings.project_id,
+                location=settings.gemini_location,
             )
         else:
             client = genai.Client(api_key=settings.api_key)
@@ -65,7 +71,10 @@ def narrate(
         response = client.models.generate_content(
             model=settings.gemini_model,
             contents=prompt,
-            config=types.GenerateContentConfig(system_instruction=_SYSTEM, temperature=0.3),
+            config=types.GenerateContentConfig(
+                system_instruction=_SYSTEM,
+                **_sampling_kwargs(settings, temperature=0.3),
+            ),
         )
         latency_ms = int((__import__("time").perf_counter() - started) * 1000)
         text = (response.text or "").strip()
