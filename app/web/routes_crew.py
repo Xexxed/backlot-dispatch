@@ -5,8 +5,25 @@ from fastapi import APIRouter, Request
 from fastapi.responses import PlainTextResponse, RedirectResponse
 
 from app.schedule_view import changes_for_person, compute_calls
+from app.tokens import links_valid, sync_token_state
 
 router = APIRouter()
+
+_EXPIRED = PlainTextResponse(
+    "This link expired — ask the AD for a fresh one.", status_code=410
+)
+
+
+def _resolve(request: Request, token: str):
+    """(kind, subject_id) for a live token, or a PlainTextResponse error."""
+    st = request.app.state
+    sync_token_state(st)  # pick up rotations performed by another instance
+    subject = st.token_index.get(token)
+    if subject is None:
+        return PlainTextResponse("Unknown link — ask the AD for your personal link.", 404)
+    if not links_valid(st.token_issued_at, st.settings.token_ttl_hours):
+        return _EXPIRED
+    return subject
 
 
 def _person(production, kind: str, subject_id: str):
@@ -18,9 +35,9 @@ def _person(production, kind: str, subject_id: str):
 @router.get("/c/{token}")
 def crew_card(request: Request, token: str, msg: str = ""):
     st = request.app.state
-    subject = st.token_index.get(token)
-    if subject is None:
-        return PlainTextResponse("Unknown link — ask the AD for your personal link.", 404)
+    subject = _resolve(request, token)
+    if not isinstance(subject, tuple):
+        return subject
     kind, subject_id = subject
     person = _person(st.production, kind, subject_id)
     if person is None:
@@ -34,7 +51,7 @@ def crew_card(request: Request, token: str, msg: str = ""):
         if published
         else []
     )
-    acked = published is not None and st.store.has_acked(published["id"], token)
+    acked = published is not None and st.store.has_acked(published["id"], subject_id)
     return st.templates.TemplateResponse(
         request,
         "crew_card.html",
@@ -50,6 +67,7 @@ def crew_card(request: Request, token: str, msg: str = ""):
             "acked": acked,
             "msg": msg,
             "production": st.production,
+            "ad_nav": False,  # crew have no AD credentials — hide console links
         },
     )
 
@@ -57,9 +75,9 @@ def crew_card(request: Request, token: str, msg: str = ""):
 @router.post("/c/{token}/ack")
 def acknowledge(request: Request, token: str, message: str = ""):
     st = request.app.state
-    subject = st.token_index.get(token)
-    if subject is None:
-        return PlainTextResponse("Unknown link.", 404)
+    subject = _resolve(request, token)
+    if not isinstance(subject, tuple):
+        return subject
     kind, subject_id = subject
     published = st.store.latest_published_plan()
     if published is None:

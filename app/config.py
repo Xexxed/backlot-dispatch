@@ -77,6 +77,33 @@ def ensure_gcp_credentials() -> None:
         os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = str(path)
 
 
+DEV_SECRET_DEFAULT = "dev-secret-not-for-production"
+# Values that must never protect crew links outside an offline dev run:
+# empty, the built-in default, or the placeholder text from .env.example.
+_INSECURE_SECRETS = {"", DEV_SECRET_DEFAULT, "change-me-to-a-long-random-string"}
+
+
+def ensure_strong_secret(settings: "Settings") -> None:
+    """Refuse to boot the web app on the dev-default/placeholder APP_SECRET.
+
+    Crew portal tokens are HMACs of this secret — with a guessable secret
+    anyone can mint valid personal links. Called only on the env-loaded
+    startup path (create_app without injected settings), so tests wiring
+    their own Settings are unaffected. Local dev escape hatch:
+    ALLOW_INSECURE_DEV_SECRET=1.
+    """
+    if settings.app_secret not in _INSECURE_SECRETS:
+        return
+    if _env("ALLOW_INSECURE_DEV_SECRET") == "1":
+        return
+    raise RuntimeError(
+        "APP_SECRET is unset or still the development default — crew links "
+        "would be forgeable. Set APP_SECRET to a long random string (see "
+        ".env.example). For local development only, set "
+        "ALLOW_INSECURE_DEV_SECRET=1 to bypass."
+    )
+
+
 class Settings:
     """Runtime settings; instantiate once at startup (see get_settings)."""
 
@@ -91,7 +118,14 @@ class Settings:
         # Gemini 3.x ignores temperature/top-P/top-K; reasoning effort is
         # steered via thinking_level (MINIMAL/LOW/MEDIUM/HIGH).
         self.gemini_thinking_level = _env("GEMINI_THINKING_LEVEL", "LOW").upper()
-        self.app_secret = _env("APP_SECRET", "dev-secret-not-for-production")
+        self.app_secret = _env("APP_SECRET", DEV_SECRET_DEFAULT)
+        # AD console (dashboard, publish, debug pages) sits behind HTTP Basic
+        # auth. Empty AD_PASSWORD = AD routes unreachable (fail closed).
+        self.ad_username = _env("AD_USERNAME", "ad")
+        self.ad_password = _env("AD_PASSWORD")
+        # Crew/cast personal links: signed with the app secret + a rotation
+        # epoch, and expire this many hours after issuance (0 = never).
+        self.token_ttl_hours = float(_env("TOKEN_TTL_HOURS", "48") or "0")
         self.day_start = _env("DAY_START", "07:00")
         self.manual_recovery_baseline_minutes = int(_env("MANUAL_RECOVERY_BASELINE_MINUTES", "90"))
         self.db_path = Path(_env("DB_PATH", "instance/backlot.db"))

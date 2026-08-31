@@ -44,6 +44,11 @@ CREATE TABLE IF NOT EXISTS gcp_calls (
     ok INTEGER NOT NULL,
     meta_json TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS token_meta (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    epoch INTEGER NOT NULL,
+    issued_at TEXT NOT NULL
+);
 """
 
 
@@ -52,7 +57,8 @@ class Store:
         path.parent.mkdir(parents=True, exist_ok=True)
         self._conn = sqlite3.connect(str(path), check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
-        self._lock = threading.Lock()
+        # RLock: helpers like bump_token_epoch call get_token_meta under the lock.
+        self._lock = threading.RLock()
         with self._lock:
             self._conn.executescript(_SCHEMA)
             # Backfill group_id on databases created before the sandbox feature.
@@ -180,12 +186,58 @@ class Store:
             ).fetchall()
         return [dict(r) for r in rows]
 
-    def has_acked(self, plan_id: str, token: str) -> bool:
+    def has_acked(self, plan_id: str, subject_id: str) -> bool:
+        """Key by subject, not tokens: link rotation must not orphan acks."""
         with self._lock:
             row = self._conn.execute(
-                "SELECT 1 FROM acks WHERE plan_id = ? AND token = ?", (plan_id, token)
+                "SELECT 1 FROM acks WHERE plan_id = ? AND subject_id = ?",
+                (plan_id, subject_id),
             ).fetchone()
         return row is not None
+
+    # --------------------------------------------------------- token meta
+    def get_token_meta(self) -> tuple[int, str]:
+        """Current link (epoch, issued_at ISO); lazily initialized to (0, now)."""
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT epoch, issued_at FROM token_meta WHERE id = 1"
+            ).fetchone()
+            if row is not None:
+                return int(row["epoch"]), str(row["issued_at"])
+            issued = utc_now_iso()
+            # Two processes sharing one fresh DB may both reach this INSERT;
+            # IGNORE makes initialization converge instead of crashing one.
+            self._conn.execute(
+                "INSERT OR IGNORE INTO token_meta (id, epoch, issued_at) "
+                "VALUES (1, 0, ?)",
+                (issued,),
+            )
+            self._conn.commit()
+            row = self._conn.execute(
+                "SELECT epoch, issued_at FROM token_meta WHERE id = 1"
+            ).fetchone()
+            return int(row["epoch"]), str(row["issued_at"])
+
+    def bump_token_epoch(self) -> tuple[int, str]:
+        """Rotate every crew/cast link: new epoch, fresh issue time."""
+        with self._lock:
+            epoch, _ = self.get_token_meta()
+            epoch += 1
+            issued = utc_now_iso()
+            self._conn.execute(
+                "UPDATE token_meta SET epoch = ?, issued_at = ? WHERE id = 1",
+                (epoch, issued),
+            )
+            self._conn.commit()
+            return epoch, issued
+
+    def set_token_issued_at(self, issued_at_iso: str) -> None:
+        """Ops/test hook: backdate the issue time to exercise expiry."""
+        with self._lock:
+            self._conn.execute(
+                "UPDATE token_meta SET issued_at = ? WHERE id = 1", (issued_at_iso,)
+            )
+            self._conn.commit()
 
     # ---------------------------------------------------------- gcp calls
     def log_gcp_call(

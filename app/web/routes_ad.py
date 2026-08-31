@@ -20,7 +20,12 @@ from app.schedule_view import changes_for_person, compute_calls
 from app.serialize import option_stats, proposal_to_dict, timeline_rows
 from app.store import utc_now_iso
 from app.timeline import build_timeline
-from app.tokens import subject_token
+from app.tokens import (
+    links_expire_at,
+    links_valid,
+    subject_token,
+    sync_token_state,
+)
 from app.web import STATIC_DIR
 
 router = APIRouter()
@@ -35,7 +40,23 @@ def _now_minutes(override: str | None) -> int:
 
 
 def _token_for(state, kind: str, subject_id: str) -> str:
-    return subject_token(state.settings.app_secret, kind, subject_id)
+    return subject_token(state.settings.app_secret, kind, subject_id, state.token_epoch)
+
+
+def _regenerate_qr_artifacts(request: Request) -> None:
+    """Rewrite every crew QR SVG from the current token index.
+
+    Prefer the configured canonical origin; the request-derived base is only
+    a fallback and is safe here because TrustedHostMiddleware already
+    rejected any request whose Host header is not on the allowlist.
+    """
+    st = request.app.state
+    base = st.settings.external_base_url or str(request.base_url).rstrip("/")
+    for token in st.token_index:
+        url = f"{base}/c/{token}"
+        segno.make(url, error="m").save(
+            str(STATIC_DIR / "qr" / f"{token}.svg"), kind="svg", scale=4, border=2
+        )
 
 
 def _recovery_stat(plan: dict | None, settings) -> dict | None:
@@ -60,6 +81,7 @@ def _recovery_stat(plan: dict | None, settings) -> dict | None:
 @router.get("/")
 def dashboard(request: Request, msg: str = ""):
     st = request.app.state
+    sync_token_state(st)  # reflect a rotation performed by another instance
     production, rbc, store = st.production, st.rbc, st.store
     published = store.latest_published_plan()
 
@@ -96,6 +118,12 @@ def dashboard(request: Request, msg: str = ""):
     recovery_stat = _recovery_stat(latest_plan, st.settings)
     prior_plan = store.previous_published_plan()
 
+    expires = links_expire_at(st.token_issued_at, st.settings.token_ttl_hours)
+    links_expiry_display = (
+        expires.strftime("%H:%M UTC") if expires is not None else None
+    )
+    links_expired = not links_valid(st.token_issued_at, st.settings.token_ttl_hours)
+
     return st.templates.TemplateResponse(
         request,
         "ad_dashboard.html",
@@ -111,6 +139,8 @@ def dashboard(request: Request, msg: str = ""):
             "total_people": len(people),
             "acked_ids": acked_ids,
             "recovery_stat": recovery_stat,
+            "links_expiry_display": links_expiry_display,
+            "links_expired": links_expired,
             "msg": msg,
         },
     )
@@ -398,6 +428,7 @@ def plan_diff(request: Request, plan_id: str, msg: str = ""):
 @router.post("/plans/{plan_id}/publish")
 async def publish_plan(request: Request, plan_id: str, acknowledge: str = ""):
     st = request.app.state
+    sync_token_state(st)
     plan = st.store.get_plan(plan_id)
     if plan is None:
         return PlainTextResponse("Unknown plan.", status_code=404)
@@ -424,15 +455,7 @@ async def publish_plan(request: Request, plan_id: str, acknowledge: str = ""):
     st.store.set_plan_status(plan_id, status)
 
     # Regenerate per-person links + QR codes into /static/qr/.
-    # Prefer the configured canonical origin; the request-derived base is only
-    # a fallback and is safe here because TrustedHostMiddleware already
-    # rejected any request whose Host header is not on the allowlist.
-    base = st.settings.external_base_url or str(request.base_url).rstrip("/")
-    for token in st.token_index:
-        url = f"{base}/c/{token}"
-        segno.make(url, error="m").save(
-            str(STATIC_DIR / "qr" / f"{token}.svg"), kind="svg", scale=4, border=2
-        )
+    _regenerate_qr_artifacts(request)
     note = "" if status == "published" else "+with+acknowledged+violations"
     return RedirectResponse(f"/?msg=Plan+{plan_id}+published{note}", status_code=303)
 
@@ -457,14 +480,34 @@ async def revert_plan(request: Request, plan_id: str):
         st.store.set_plan_status(current["id"], "superseded")
     st.store.set_plan_status(plan_id, "published")
 
-    base = st.settings.external_base_url or str(request.base_url).rstrip("/")
-    for token in st.token_index:
-        url = f"{base}/c/{token}"
-        segno.make(url, error="m").save(
-            str(STATIC_DIR / "qr" / f"{token}.svg"), kind="svg", scale=4, border=2
-        )
+    sync_token_state(st)
+    _regenerate_qr_artifacts(request)
     return RedirectResponse(
         f"/?msg=Reverted+to+plan+{plan_id}+-+crew+links+live+again", status_code=303
+    )
+
+
+@router.post("/links/rotate")
+async def rotate_links(request: Request):
+    """One-shot crew-link rotation: bump the token epoch.
+
+    Every previously distributed personal link and QR code stops resolving
+    (404) immediately; fresh links + QR SVGs are generated in their place.
+    Use when a link leaked or the TTL lapsed mid-day.
+    """
+    st = request.app.state
+    st.store.bump_token_epoch()
+    sync_token_state(st)  # adopt the new epoch: rebuild index + issue time
+
+    # Drop stale QR artifacts so a scanned old code can't linger on disk,
+    # then regenerate from the new epoch. If the process dies between the
+    # bump and regeneration, create_app's QR reconciliation repairs it on
+    # the next boot.
+    for old in (STATIC_DIR / "qr").glob("*.svg"):
+        old.unlink()
+    _regenerate_qr_artifacts(request)
+    return RedirectResponse(
+        "/?msg=Crew+links+rotated+-+old+links+and+QRs+are+dead", status_code=303
     )
 
 
@@ -481,6 +524,7 @@ def changelog(request: Request):
 @router.get("/dept/{dept_name:path}")
 def department_view(request: Request, dept_name: str):
     st = request.app.state
+    sync_token_state(st)
     production = st.production
     crew = [m for m in production.crew if m.department.lower() == dept_name.lower()]
     if not crew:

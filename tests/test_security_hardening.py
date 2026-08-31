@@ -54,6 +54,15 @@ def test_wrong_password_rejected(bare_client):
     assert resp.status_code == 401
 
 
+def test_non_ascii_credentials_return_401_not_500(bare_client):
+    """Latin-1-decoded Basic credentials must not crash compare_digest."""
+    import base64
+
+    header = base64.b64encode("ad:раdГугlK".encode("utf-8")).decode()
+    resp = bare_client.get("/", headers={"Authorization": f"Basic {header}"})
+    assert resp.status_code == 401
+
+
 def test_ad_routes_503_when_password_unconfigured(settings, production, rbc):
     settings.ad_password = ""
     store = Store(settings.db_path)
@@ -179,6 +188,10 @@ def test_links_expire_after_ttl(client, settings):
     assert (
         client.post(f"/c/{token}/ack", follow_redirects=False).status_code == 410
     )
+    # The AD dashboard must surface the dead-link state, not the stale time.
+    dash = client.get("/")
+    assert dash.status_code == 200
+    assert "links EXPIRED" in dash.text
 
 
 def test_rotation_kills_old_links_and_regenerates_qr(client, settings):
@@ -196,6 +209,67 @@ def test_rotation_kills_old_links_and_regenerates_qr(client, settings):
     new_token = subject_token("test-secret", "crew", "GE-09", epoch=1)
     assert client.get(f"/c/{new_token}").status_code == 200
     assert (STATIC_DIR / "qr" / f"{new_token}.svg").exists()
+
+
+def test_acks_survive_rotation(client, settings):
+    """Acks are recorded per subject, so reissued links keep the ack state."""
+    _publish_plan(client)
+    old_token = subject_token("test-secret", "crew", "GE-09", epoch=0)
+    assert client.post(f"/c/{old_token}/ack", follow_redirects=False).status_code == 303
+
+    client.post("/links/rotate", follow_redirects=False)
+    new_token = subject_token("test-secret", "crew", "GE-09", epoch=1)
+    card = client.get(f"/c/{new_token}")
+    assert card.status_code == 200
+    assert "Acknowledged" in card.text  # not re-prompted to ack again
+
+
+def test_other_instance_rotation_is_observed_via_store(client, settings):
+    """A rotation committed to the DB (e.g. by a second instance) must be
+    honored by this process without it ever seeing /links/rotate."""
+    client.post("/links/rotate", follow_redirects=False)  # epoch 1 live here
+    # Simulate ANOTHER process rotating: bump the store behind this app's back.
+    client.app.state.store.bump_token_epoch()
+    epoch2_token = subject_token("test-secret", "crew", "GE-09", epoch=2)
+    assert client.get(f"/c/{epoch2_token}").status_code == 200  # read-through works
+
+
+def test_startup_reconciles_missing_qr_artifacts(client, settings, production, rbc):
+    settings_fixture = client.app.state.settings
+    settings_fixture.public_base_url = "https://backlot.example"
+    _publish_plan(client)
+    token = subject_token("test-secret", "crew", "GE-09", epoch=0)
+    qr = STATIC_DIR / "qr" / f"{token}.svg"
+    assert qr.exists()
+    qr.unlink()
+
+    from app.web import create_app
+
+    create_app(
+        settings=settings_fixture,
+        production=production,
+        rulebook_ctx=rbc,
+        store=client.app.state.store,
+    )
+    assert qr.exists(), "startup must regenerate missing QR artifacts"
+
+
+def test_epoch_zero_matches_pre_rotation_wire_format():
+    """Links issued before the epoch feature deployed must keep working."""
+    import hashlib
+    import hmac
+
+    legacy = hmac.new(
+        b"test-secret", b"crew:GE-09", hashlib.sha256
+    ).hexdigest()[:20]
+    assert subject_token("test-secret", "crew", "GE-09", epoch=0) == legacy
+
+
+def test_crew_portal_hides_ad_console_nav(bare_client):
+    token = subject_token("test-secret", "crew", "GE-09")
+    page = bare_client.get(f"/c/{token}")
+    assert page.status_code == 200
+    assert 'href="/changelog"' not in page.text  # AD links would 401 for crew
 
 
 def test_rotation_resets_expiry(client, settings):

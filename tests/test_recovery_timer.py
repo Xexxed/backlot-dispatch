@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 
 from app.store import Store
 from app.web import create_app
+from tests.conftest import basic_auth_header
 
 
 @pytest.fixture()
@@ -18,6 +19,9 @@ def env(settings, production, rbc):
         store=store,
     )
     with TestClient(app) as c:
+        c.headers["Authorization"] = basic_auth_header(
+            settings.ad_username, settings.ad_password
+        )
         yield c, store
     store.close()
 

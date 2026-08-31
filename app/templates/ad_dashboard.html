@@ -88,7 +88,15 @@
 </div>
 {% endif %}
 
-<div class="section-heading"><h2>Crew &amp; cast call times</h2></div>
+<div class="section-heading">
+  <h2>Crew &amp; cast call times</h2>
+  <form method="post" action="/links/rotate" style="display:inline;"
+      onsubmit="return confirm('Rotate ALL crew links? Every distributed link and QR code stops working immediately.')">
+    <button class="btn secondary small" type="submit">Rotate crew links</button>
+    {% if links_expired %}<span class="chip err">links EXPIRED — rotate to restore crew access</span>
+    {% elif links_expiry_display %}<span class="muted small">links expire {{ links_expiry_display }}</span>{% endif %}
+  </form>
+</div>
 <div class="panel table-panel">
 <table class="responsive">
   <tr><th scope="col">Name</th><th scope="col">Dept</th><th scope="col">Was</th><th scope="col">Now</th><th scope="col">Δ</th><th scope="col">Ack</th><th scope="col">Link</th></tr>

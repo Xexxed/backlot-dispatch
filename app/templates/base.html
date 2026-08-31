@@ -20,11 +20,13 @@
 <body>
 <header class="site">
   <div class="brand"><span class="brand-mark" aria-hidden="true">▣</span><span>Backlot</span><span>Dispatch</span></div>
+  {% if ad_nav | default(true) %}
   <nav>
     <a href="/">Dashboard</a>
     <a href="/changelog">Changelog</a>
     <a href="/debug/gcp">GCP log</a>
   </nav>
+  {% endif %}
 </header>
 <main>
   <div class="page-skeleton" aria-hidden="true">

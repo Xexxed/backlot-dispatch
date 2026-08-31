@@ -64,10 +64,37 @@ agent gracefully falls back to the manual form; every other feature works.
 6. Open a crew link on a phone: new call time, what-changed-and-why, ack tap
    lands back on the AD dashboard.
 
+## Security model
+
+**Rollout order for deploying this revision:** set `APP_SECRET` **and**
+`AD_PASSWORD` in Replit Secrets *before* promoting — the app refuses to boot
+on the dev-default `APP_SECRET`, and without `AD_PASSWORD` the AD console is
+unreachable (503). Crew links issued before the expiry/rotation feature
+deployed keep working until the first explicit rotation.
+
+- **AD console + debug pages** (`/`, `/incident`, `/edit`, `/plans/*`,
+  `/sandbox/*`, `/links/rotate`, `/debug/*`) require HTTP Basic auth —
+  `AD_USERNAME` / `AD_PASSWORD` env vars. No password configured = routes
+  answer 503 (fail closed, never open-by-default).
+- **APP_SECRET is mandatory**: startup refuses the dev default or the
+  `.env.example` placeholder (`ALLOW_INSECURE_DEV_SECRET=1` opts out for
+  local hacking only). Crew links are HMACs of this secret, so a default
+  secret = forgeable links.
+- **CSRF**: mutating requests with an `Origin`/`Referer` header must match
+  the (TrustedHost-validated) request host or a trusted host — cross-site
+  form posts get 403.
+- **Crew links**: HMAC token + rotation epoch with a configurable TTL
+  (`TOKEN_TTL_HOURS`, default 48, 0 = never). "Rotate crew links" on the
+  dashboard instantly kills every live link and QR code and issues fresh
+  ones. The epoch/issue time live in the SQLite DB, so restarts do not
+  extend expiry — but on Replit's ephemeral filesystem a *redeploy* starts a
+  fresh DB (epoch 0), so re-share links after redeploying if you have
+  rotated. Acks are recorded per person and survive rotation.
+
 ## Tests
 
 ```powershell
-.venv\Scripts\python.exe -m pytest tests -q     # 52 tests: invariants, E2E, contracts
+.venv\Scripts\python.exe -m pytest tests -q     # 107 tests: invariants, E2E, contracts
 ```
 
 Key invariant: a proposal is feasible **iff** the independent validator finds

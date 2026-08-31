@@ -1,6 +1,7 @@
 """Shared fixtures: seed production, rulebook context, per-test settings."""
 from __future__ import annotations
 
+import base64
 import shutil
 import sys
 import uuid
@@ -15,6 +16,15 @@ if str(ROOT) not in sys.path:
 from app.config import Settings  # noqa: E402
 from app.importers import load_production  # noqa: E402
 from app.rulebook import RuleBookContext, load_rulebook  # noqa: E402
+
+
+def basic_auth_header(username: str, password: str) -> str:
+    """Default Authorization header for AD-authenticated test clients.
+
+    (This environment's TestClient has no `auth=` constructor kwarg, so the
+    header is set on the client after construction.)
+    """
+    return "Basic " + base64.b64encode(f"{username}:{password}".encode()).decode()
 
 
 @pytest.fixture()
@@ -62,6 +72,8 @@ def settings():
     s.use_vertexai = True
     s.replit_dev_domain = ""
     s.replit_domains = []
+    s.ad_username = "ad"
+    s.ad_password = "test-ad-password"
     yield s
     s.db_path.unlink(missing_ok=True)
 
@@ -79,6 +91,12 @@ def client(settings, production, rbc):
         rulebook_ctx=rbc,
         store=store,
     )
+    # AD routes require Basic auth; send valid credentials by default so
+    # route behavior tests stay focused. Auth-specific tests build their
+    # own client without credentials.
     with TestClient(app) as c:
+        c.headers["Authorization"] = basic_auth_header(
+            settings.ad_username, settings.ad_password
+        )
         yield c
     store.close()  # release the sqlite file before settings teardown unlinks it
