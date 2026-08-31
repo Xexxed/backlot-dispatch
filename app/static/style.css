@@ -193,6 +193,7 @@ h3 { margin: 0; font-size: 1rem; }
   margin: 9px 0 0;
   color: var(--muted);
 }
+.gcp-refresh-form { flex-shrink: 0; }
 .status-pill, .chip {
   display: inline-flex;
   align-items: center;

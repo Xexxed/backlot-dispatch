@@ -81,6 +81,63 @@ def test_crew_portal_needs_no_ad_credentials(bare_client):
     assert bare_client.get(f"/c/{token}").status_code == 200
 
 
+def test_gcp_refresh_logs_success(settings, production, rbc, monkeypatch):
+    from types import SimpleNamespace
+
+    from app.store import Store
+    from app.web import create_app
+    from google import genai
+    from fastapi.testclient import TestClient
+
+    settings.project_id = "test-project"
+    calls = []
+
+    class FakeModels:
+        def generate_content(self, **kwargs):
+            calls.append(kwargs)
+            return SimpleNamespace(text="OK")
+
+    class FakeClient:
+        def __init__(self, **kwargs):
+            self.models = FakeModels()
+            self.client_kwargs = kwargs
+
+    monkeypatch.setattr(genai, "Client", FakeClient)
+    store = Store(settings.db_path)
+    app = create_app(settings=settings, production=production, rulebook_ctx=rbc, store=store)
+    with TestClient(app) as client:
+        response = client.post(
+            "/debug/gcp/refresh",
+            auth=("ad", "test-ad-password"),
+            follow_redirects=False,
+        )
+        assert response.status_code == 303
+        assert response.headers["location"] == "/debug/gcp?refresh=success"
+        page = client.get(response.headers["location"], auth=("ad", "test-ad-password"))
+        assert page.status_code == 200
+        assert "Connection check passed" in page.text
+
+    logged = store.recent_gcp_calls(limit=1)[0]
+    assert logged["kind"] == "health_check"
+    assert logged["ok"] == 1
+    assert calls[0]["model"] == settings.gemini_model
+    assert calls[0]["contents"].startswith("Connection health check")
+    store.close()
+
+
+def test_gcp_refresh_logs_unconfigured_failure(client):
+    response = client.post("/debug/gcp/refresh", follow_redirects=False)
+    assert response.status_code == 303
+    assert response.headers["location"] == "/debug/gcp?refresh=failure"
+
+    page = client.get(response.headers["location"])
+    assert "Connection check failed" in page.text
+    logged = client.app.state.store.recent_gcp_calls(limit=1)[0]
+    assert logged["kind"] == "health_check"
+    assert logged["ok"] == 0
+    assert "not_configured" in logged["meta_json"]
+
+
 # --- CSRF origin guard -------------------------------------------------------
 
 

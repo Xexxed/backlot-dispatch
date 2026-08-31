@@ -7,7 +7,15 @@
     <p class="page-intro">Every Google Cloud model call is logged here — contest gate proof that the
 agent runtime calls Vertex AI at request time.</p>
   </div>
+  <form method="post" action="/debug/gcp/refresh" class="gcp-refresh-form">
+    <button class="btn secondary small" type="submit">↻ Refresh GCP connection</button>
+  </form>
 </div>
+{% if refresh_message %}
+<div class="banner {% if refresh_status == 'failure' %}warn{% endif %}" role="status" aria-live="polite">
+  {{ refresh_message }}
+</div>
+{% endif %}
 <div class="panel">
   <table class="responsive">
   <tr><th scope="col">When (UTC)</th><th scope="col">Kind</th><th scope="col">Model</th><th scope="col">Latency</th><th scope="col">OK</th><th scope="col">Meta</th></tr>

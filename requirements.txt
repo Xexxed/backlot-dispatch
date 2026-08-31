@@ -18,3 +18,13 @@ python-dotenv>=1.0
 python-multipart>=0.0.9
 segno>=1.6
 uvicorn[standard]>=0.30
+fastapi
+google-genai
+httpx
+jinja2
+pydantic
+pytest
+python-dotenv
+python-multipart
+segno
+uvicorn
