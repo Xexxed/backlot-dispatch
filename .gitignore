@@ -49,7 +49,7 @@ htmlcov/
 .mypy_cache/
 .ruff_cache/
 .uvcache/
-tests/
+# NOTE: tests/ is source and must stay tracked — never ignore it here.
 
 # --- Databases & runtime state (SQLite lives here) ---
 *.db
