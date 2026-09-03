@@ -18,6 +18,14 @@
 </div>
 {% endif %}
 
+{% if plan.incident.source == 'voice' and plan.incident.free_text %}
+<div class="banner">
+  <strong>Voice note transcript</strong> <span class="chip">voice intake</span>
+  <span class="muted small">— exactly what the intake agent heard; confirm before publishing</span>
+  <div style="margin-top:0.4rem;">“{{ plan.incident.free_text }}”</div>
+</div>
+{% endif %}
+
 <div class="banner">
   <strong>What changed &amp; why</strong> <span class="chip">narrator: {{ plan.narration.source if plan.narration else 'template' }}</span>
   {% if recovery_stat %}

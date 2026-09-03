@@ -36,6 +36,7 @@ agent gracefully falls back to the manual form; every other feature works.
 ```
 [voice/text incident] → Intake Agent (Gemini via Vertex AI, google-genai)
                       → structured JSON (response-schema enforced;
+                        one call for voice: WAV in → transcript + incident out;
                         fallback manual form on low confidence/failure)
 [revised schedule]    ← Deterministic Re-optimizer (pure Python, no LLM)
                       ← rulebook config (meals/daylight/travel/deps/blocks)
@@ -55,6 +56,13 @@ agent gracefully falls back to the manual form; every other feature works.
   become one-click blocking `WEATHER` incidents through the same
   sandbox → review → publish pipeline; `Incident.blocked_from` keeps an
   afternoon storm from voiding the morning.
+- **Voice intake**: the incident form's mic button records the report in-page
+  as 16 kHz mono WAV (`app/static/voice.js` — Web Audio with a hand-rolled
+  encoder; MediaRecorder is deliberately avoided because desktop Chrome only
+  emits webm/opus, which Gemini rejects). A single Gemini call transcribes
+  *and* extracts the structured incident; the transcript rides on the
+  incident and is shown on the plan-review page before publishing. Raw audio
+  is processed in memory and never persisted.
 - **Narrator**: describes the optimizer's change list for crew comms; it can
   never alter schedule facts. Falls back to a deterministic template.
 - **Storage**: production entities live in CSV (`seed/`); runtime state
@@ -63,8 +71,10 @@ agent gracefully falls back to the manual form; every other feature works.
 ## Demo script (60-second run)
 
 1. Dashboard shows the baseline day board for *Midnight Harvest* (25 scenes).
-2. Type: “Generator down at Stage 4, exterior unit blocked until 14:00”.
-3. Intake agent returns structured incident JSON (see `/debug/gcp`).
+2. Tap the mic and speak the disruption: “Generator down at Stage 4, exterior
+   unit blocked until 14:00” — or type it instead.
+3. Intake agent returns the transcript + structured incident JSON (see
+   `/debug/gcp`); the review page shows exactly what the model heard.
 4. Diff view: scenes pushed behind unblocked work, lunch re-timed, dependency
    order preserved — each row citing its rule.
 5. **Publish** → per-person links + QR codes regenerate instantly.
@@ -73,6 +83,10 @@ agent gracefully falls back to the manual form; every other feature works.
 7. Weather beat: the "Weather watch" card flags the fixture storm at Harper
    Ranch (14:00–16:30) threatening `SC-121`/`SC-125` → "Generate weather
    pivot plan" runs the identical sandbox flow for a `WEATHER` incident.
+
+**Phone note:** mic capture (`getUserMedia`) only works on HTTPS or
+`localhost` — on a phone, use the deployed `*.replit.app` URL; over plain
+HTTP the widget hands you a hint and the text box remains.
 
 ## Security model
 
@@ -113,7 +127,7 @@ deployed keep working until the first explicit rotation.
 ## Tests
 
 ```powershell
-.venv\Scripts\python.exe -m pytest tests -q     # 161 tests: invariants, E2E, contracts
+.venv\Scripts\python.exe -m pytest tests -q     # 190 tests: invariants, E2E, contracts
 ```
 
 Key invariant: a proposal is feasible **iff** the independent validator finds

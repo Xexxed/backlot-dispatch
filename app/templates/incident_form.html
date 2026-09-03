@@ -19,6 +19,7 @@
 {% endif %}
 <form class="panel" method="post" action="/incident">
   <label for="free_text">Describe what happened</label>
+  {% include "_voice_widget.html" %}
   <textarea id="free_text" name="free_text" rows="4">{{ free_text }}</textarea>
 
   <details {% if fallback_reason %}open{% endif %}>

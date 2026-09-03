@@ -20,6 +20,10 @@ from app.store import Store
 
 _HHMM = re.compile(r"^([01]?\d|2[0-3]):([0-5]\d)$")
 
+# Confidence gate shared by the text and voice intake paths — below this the
+# manual form takes over. One constant so the two paths can never drift apart.
+MIN_CONFIDENCE = 0.6
+
 
 class FallbackRequired(Exception):
     """Raised when the manual form should take over; carries the reason."""
@@ -42,6 +46,14 @@ class _IncidentOut(BaseModel):
     )
     severity: str = Field(default="medium", description=f"One of: {', '.join(SEVERITIES)}")
     confidence: float = Field(default=1.0, ge=0.0, le=1.0)
+
+
+class _VoiceIncidentOut(_IncidentOut):
+    """Voice-note variant: same incident fields plus the verbatim transcript."""
+
+    transcript: str = Field(
+        default="", description="Verbatim transcript of the voice note"
+    )
 
 
 def _sampling_kwargs(settings: Settings, temperature: float = 0.0) -> dict:
@@ -74,6 +86,14 @@ def _system_prompt(locations: dict[str, Location]) -> str:
         "- blocked_until must be HH:MM 24-hour local time, or null if unknown.\n"
         "- confidence reflects how certain you are that type and location are "
         "correct. Output JSON only."
+    )
+
+
+def _voice_system_prompt(locations: dict[str, Location]) -> str:
+    return _system_prompt(locations) + (
+        "\nThe incident report arrives as an audio recording of the 1st AD "
+        "speaking. Transcribe it first, then extract the structured incident "
+        "from your transcript."
     )
 
 
@@ -192,7 +212,7 @@ def parse_incident(
     except Exception as exc:
         parse_error = str(exc)[:200]
 
-    if parsed is None or parsed.confidence < 0.6:
+    if parsed is None or parsed.confidence < MIN_CONFIDENCE:
         if store:
             store.log_gcp_call(
                 "intake",
@@ -221,4 +241,134 @@ def parse_incident(
         free_text=text.strip(),
         confidence=parsed.confidence,
         source="gemini",
+    )
+
+
+def parse_incident_voice(
+    audio: bytes,
+    settings: Settings,
+    locations: dict[str, Location],
+    store: Store | None = None,
+) -> Incident:
+    """One Gemini call: WAV bytes -> transcript + structured incident.
+
+    Same contract as parse_incident (confidence gate, normalizers,
+    FallbackRequired on transport/parse/low-confidence — nothing persisted
+    either way). The transcript becomes Incident.free_text so the review page
+    shows exactly what the model heard before the AD publishes.
+    """
+    if not audio:
+        raise FallbackRequired("Empty recording — record again or use the form.")
+    if not settings.gemini_configured:
+        raise FallbackRequired(
+            "Gemini/Vertex credentials not configured — using the manual form."
+        )
+
+    try:  # lazy import keeps offline dev/test runs dependency-light
+        from google import genai
+        from google.genai import types
+    except Exception as exc:  # pragma: no cover - environment-specific
+        raise FallbackRequired(f"google-genai SDK unavailable: {exc}") from exc
+
+    mime = "audio/wav"
+    try:
+        if settings.use_vertexai:
+            client = genai.Client(
+                enterprise=True,
+                project=settings.project_id,
+                location=settings.gemini_location,
+            )
+        else:
+            client = genai.Client(api_key=settings.api_key)
+        prompt = (
+            "The attached audio is the 1st AD's spoken incident report. "
+            "Transcribe it verbatim into the transcript field, then extract "
+            "the structured incident from that transcript."
+        )
+        started = time.perf_counter()
+        response = client.models.generate_content(
+            model=settings.gemini_model,
+            contents=[
+                types.Part.from_bytes(data=audio, mime_type=mime),
+                prompt,
+            ],
+            config=types.GenerateContentConfig(
+                system_instruction=_voice_system_prompt(locations),
+                response_mime_type="application/json",
+                response_schema=_VoiceIncidentOut,
+                **_sampling_kwargs(settings),
+            ),
+        )
+        latency_ms = int((time.perf_counter() - started) * 1000)
+    except Exception as exc:
+        if store:
+            store.log_gcp_call(
+                "intake_voice", settings.gemini_model, 0, ok=False,
+                meta={"audio_bytes": len(audio), "mime": mime, "error": str(exc)[:300]},
+            )
+        raise FallbackRequired(f"Gemini call failed: {exc}") from exc
+
+    raw_text = (response.text or "").strip()
+    meta: dict = {
+        "audio_bytes": len(audio),
+        "mime": mime,
+        "response_bytes": len(raw_text),
+    }
+    usage = getattr(response, "usage_metadata", None)
+    if usage is not None:
+        meta["prompt_tokens"] = getattr(usage, "prompt_token_count", None)
+        meta["output_tokens"] = getattr(usage, "candidates_token_count", None)
+
+    parsed: _VoiceIncidentOut | None = None
+    parse_error = ""
+    try:
+        data = json.loads(raw_text)
+        parsed = _VoiceIncidentOut.model_validate(data)
+    except Exception as exc:
+        parse_error = str(exc)[:200]
+
+    transcript = (parsed.transcript or "").strip() if parsed else ""
+    if parsed is None or parsed.confidence < MIN_CONFIDENCE or not transcript:
+        if store:
+            store.log_gcp_call(
+                "intake_voice",
+                settings.gemini_model,
+                latency_ms,
+                ok=False,
+                meta={
+                    # transcript length only — the text itself belongs in the
+                    # incident, never in the evidence log of a rejected call
+                    **meta,
+                    "transcript_chars": len(transcript),
+                    "reason": "low_confidence_or_parse_error",
+                    "detail": parse_error,
+                },
+            )
+        raise FallbackRequired(
+            "Intake agent could not make out the voice note — "
+            "record again or confirm details on the form."
+        )
+
+    location_id = _normalize_location(parsed.location_id, locations)
+    severity = parsed.severity if parsed.severity in SEVERITIES else "medium"
+    itype = parsed.type if parsed.type in INCIDENT_TYPES else "OTHER"
+
+    if store:
+        store.log_gcp_call(
+            "intake_voice",
+            settings.gemini_model,
+            latency_ms,
+            ok=True,
+            meta={**meta, "transcript_chars": len(transcript)},
+        )
+
+    return Incident(
+        type=itype,
+        location_id=location_id,
+        unit=parsed.unit,
+        blocked_until=_normalize_blocked_until(parsed.blocked_until),
+        severity=severity,
+        free_text=transcript,
+        confidence=parsed.confidence,
+        source="voice",
     )

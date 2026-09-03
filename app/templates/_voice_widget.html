@@ -1,0 +1,8 @@
+{# Shared voice-note widget: mic button + status line + elapsed timer. #}
+{# The submit form is built by voice.js at stop time (a <form> tag cannot be #}
+{# nested inside the incident form, and plain navigation keeps 303s simple). #}
+<div class="voice-widget" data-voice-widget>
+  <button class="btn secondary" type="button" data-voice-button>● Record voice note</button>
+  <span class="muted small" data-voice-status role="status">Or speak the report — one tap, transcribed by Gemini.</span>
+</div>
+<script src="/static/voice.js" defer></script>

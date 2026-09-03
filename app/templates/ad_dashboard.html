@@ -13,6 +13,7 @@
   <p class="page-intro">Describe the problem in plain language. The intake agent will translate it into a safe, reviewable recovery plan.</p>
   <form method="post" action="/incident">
     <label for="free_text">What happened?</label>
+    {% include "_voice_widget.html" %}
     <textarea id="free_text" name="free_text" rows="3"
       placeholder='e.g. "Generator down at Stage 4, exterior unit blocked until 14:00"'></textarea>
     <details>

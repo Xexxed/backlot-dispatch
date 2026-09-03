@@ -372,6 +372,8 @@ textarea:focus, input:focus, select:focus { background: #151c25; border-color: v
 input[type="checkbox"] { width: auto; margin: 0; accent-color: var(--accent); }
 input[type="time"] { color-scheme: dark; }
 .form-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 21px; }
+.voice-widget { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 8px 0 12px; }
+.voice-widget .btn { min-height: 38px; padding: 7px 14px; font-size: 0.8rem; }
 .scene-checks { grid-template-columns: repeat(auto-fit, minmax(88px, 1fr)); margin-top: 10px; }
 .scene-toggle {
   display: flex;

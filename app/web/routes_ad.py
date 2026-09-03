@@ -7,11 +7,12 @@ from datetime import datetime, timezone
 from typing import Annotated
 
 import segno
-from fastapi import APIRouter, Form, Request
+from fastapi import APIRouter, File, Form, Request, UploadFile
 from fastapi.responses import PlainTextResponse, RedirectResponse
+from starlette.concurrency import run_in_threadpool
 
 from app.agents.editor import FallbackRequired as EditFallback, manual_edit_intent, parse_edit_intents
-from app.agents.intake import FallbackRequired, parse_incident
+from app.agents.intake import FallbackRequired, parse_incident, parse_incident_voice
 from app.agents.narrator import narrate, narrate_plan
 from app.edit_ops import EditError, apply_edits
 from app.engine import STRATEGIES, baseline_context, baseline_day_items, replan
@@ -295,41 +296,135 @@ async def create_incident(
                 },
             )
 
-    plan_id = uuid.uuid4().hex[:12]
     now_minutes = _now_minutes(now_override or None, settings)
-    has_blocking = bool(
-        incident.location_id and incident.blocked_until_minutes() is not None
+    return _incident_pipeline_response(
+        st, incident, [c for c in (completed or []) if c], now_minutes, t0
     )
 
-    # Non-blocking incidents (cast delay, weather w/o location, etc.) go straight
-    # to a single review page — the sandbox only meaningfully differs when a
-    # location is actually blocked.
-    if not has_blocking:
+
+def _incident_pipeline_response(
+    st, incident: Incident, completed_ids: list[str], now_minutes: int, t0: float
+) -> RedirectResponse:
+    """Post-intake flow shared by the text route and the voice route.
+
+    Non-blocking incidents (cast delay, weather w/o location, etc.) go straight
+    to a single review page — the sandbox only meaningfully differs when a
+    location is actually blocked. Blocking incidents generate every recovery
+    strategy as a sandbox group.
+    """
+    if not (incident.location_id and incident.blocked_until_minutes() is not None):
+        plan_id = uuid.uuid4().hex[:12]
         proposal = replan(
-            production,
+            st.production,
             st.rbc,
-            completed_scene_ids=[c for c in (completed or []) if c],
+            completed_scene_ids=completed_ids,
             incident=incident,
             now_minutes=now_minutes,
             plan_id=plan_id,
             created_at=utc_now_iso(),
         )
         summary_text, narration_source = narrate(
-            proposal.changes, proposal.diagnostics, settings, store
+            proposal.changes, proposal.diagnostics, st.settings, st.store
         )
-        t1 = time.perf_counter()
         payload = proposal_to_dict(proposal)
         payload["narration"] = {"text": summary_text, "source": narration_source}
         payload["now_minutes"] = now_minutes
-        payload["recovery_seconds"] = max(round(t1 - t0, 2), 0.05)
-        store.save_plan(payload)
+        payload["recovery_seconds"] = max(round(time.perf_counter() - t0, 2), 0.05)
+        st.store.save_plan(payload)
         return RedirectResponse(f"/plans/{plan_id}", status_code=303)
 
-    # Blocking incident → generate every recovery strategy as a sandbox group.
     group_id = _sandbox_group_for_blocking_incident(
-        st, incident, [c for c in (completed or []) if c], now_minutes, t0
+        st, incident, completed_ids, now_minutes, t0
     )
     return RedirectResponse(f"/sandbox/{group_id}", status_code=303)
+
+
+# ~5 minutes of 16 kHz 16-bit mono WAV; the client widget caps recording at
+# ~2 minutes, so anything larger is an abuse/bug case, not a real note.
+MAX_VOICE_NOTE_BYTES = 10 * 1024 * 1024
+# Content-Length pre-check: multipart framing adds a small fixed overhead on
+# top of the file part, and a body far beyond that is rejected before the
+# upload is read into memory at all.
+_MAX_VOICE_REQUEST_BYTES = MAX_VOICE_NOTE_BYTES + 64 * 1024
+
+
+def _looks_like_wav(data: bytes) -> bool:
+    return len(data) >= 44 and data[:4] == b"RIFF" and data[8:12] == b"WAVE"
+
+
+@router.post("/incident/voice")
+async def create_incident_voice(
+    request: Request,
+    audio: Annotated[UploadFile | None, File()] = None,
+    completed: Annotated[list[str] | None, Form()] = None,
+    now_override: Annotated[str, Form()] = "",
+):
+    """Voice-note intake: one Gemini call transcribes + extracts the incident,
+    then the exact post-intake flow of /incident runs. Validation errors and
+    agent fallbacks re-render the form with HTTP 200, same convention as the
+    text path. Audio is processed in memory and never persisted.
+    """
+    t0 = time.perf_counter()
+    st = request.app.state
+    settings, production, store = st.settings, st.production, st.store
+
+    def _rerender(error: str | None = None, fallback_reason: str | None = None):
+        return st.templates.TemplateResponse(
+            request,
+            "incident_form.html",
+            {
+                "locations": production.locations,
+                "free_text": "",
+                "fallback_reason": fallback_reason,
+                "error": error,
+            },
+        )
+
+    content_length = request.headers.get("content-length")
+    if (
+        content_length
+        and content_length.isdigit()
+        and int(content_length) > _MAX_VOICE_REQUEST_BYTES
+    ):
+        return _rerender(
+            error="Voice note too long — keep the report under two minutes."
+        )
+
+    # Read at most cap+1 bytes: the size check below then always fires for an
+    # oversize body without ever buffering more than the cap, even if the
+    # client lied about Content-Length (or used chunked encoding).
+    data = await audio.read(MAX_VOICE_NOTE_BYTES + 1) if audio is not None else b""
+    if not data:
+        return _rerender(error="No audio received — record a voice note and try again.")
+    if len(data) > MAX_VOICE_NOTE_BYTES:
+        return _rerender(
+            error="Voice note too long — keep the report under two minutes."
+        )
+    if not _looks_like_wav(data):
+        return _rerender(
+            error="Unsupported audio format — voice notes are captured as WAV."
+        )
+
+    try:
+        # The Gemini call is a blocking multi-second round trip on multi-MB
+        # audio; the deterministic replan/narrate pipeline follows it. Both
+        # run off the event loop so a voice upload cannot stall the single
+        # uvicorn worker for every other request.
+        incident = await run_in_threadpool(
+            parse_incident_voice, data, settings, production.locations, store
+        )
+    except FallbackRequired as fr:
+        return _rerender(fallback_reason=fr.reason)
+
+    now_minutes = _now_minutes(now_override or None, settings)
+    return await run_in_threadpool(
+        _incident_pipeline_response,
+        st,
+        incident,
+        [c for c in (completed or []) if c],
+        now_minutes,
+        t0,
+    )
 
 
 def _sandbox_group_for_blocking_incident(
