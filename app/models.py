@@ -58,6 +58,8 @@ SEVERITIES = ("low", "medium", "high")
 class Location:
     id: str
     name: str
+    lat: float | None = None  # optional WGS84; enables live weather lookup
+    lng: float | None = None
 
 
 @dataclass
@@ -119,15 +121,21 @@ class Incident(BaseModel):
     location_id: str | None = None
     unit: str | None = None
     blocked_until: str | None = None  # HH:MM or None when not a blocking event
+    blocked_from: str | None = None  # HH:MM window start; None = blocks from 'now'
     severity: str = Field(default="medium")
     free_text: str = ""
     confidence: float = Field(default=1.0, ge=0.0, le=1.0)
-    source: str = "manual"  # gemini | manual_form | voice | fallback
+    source: str = "manual"  # gemini | manual_form | voice | fallback | weather_advisor
 
     def blocked_until_minutes(self) -> int | None:
         if not self.blocked_until:
             return None
         return hhmm_to_minutes(self.blocked_until)
+
+    def blocked_from_minutes(self) -> int | None:
+        if not self.blocked_from:
+            return None
+        return hhmm_to_minutes(self.blocked_from)
 
 
 # ------------------------------------------------------- edit intents (pydantic)

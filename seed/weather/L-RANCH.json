@@ -1,0 +1,23 @@
+{
+  "location_id": "L-RANCH",
+  "source": "fixture",
+  "generated_at": "2026-09-01T06:30:00",
+  "hours": [
+    {"start": "07:00", "end": "08:00", "precip_prob": 5, "wind_kmh": 8, "thunder": false, "summary": "Clear"},
+    {"start": "08:00", "end": "09:00", "precip_prob": 5, "wind_kmh": 9, "thunder": false, "summary": "Clear"},
+    {"start": "09:00", "end": "10:00", "precip_prob": 10, "wind_kmh": 11, "thunder": false, "summary": "Sunny"},
+    {"start": "10:00", "end": "11:00", "precip_prob": 10, "wind_kmh": 13, "thunder": false, "summary": "Sunny"},
+    {"start": "11:00", "end": "12:00", "precip_prob": 15, "wind_kmh": 14, "thunder": false, "summary": "Partly cloudy"},
+    {"start": "12:00", "end": "13:00", "precip_prob": 25, "wind_kmh": 17, "thunder": false, "summary": "Clouding over"},
+    {"start": "13:00", "end": "14:00", "precip_prob": 45, "wind_kmh": 22, "thunder": false, "summary": "Chance of rain"},
+    {"start": "14:00", "end": "14:30", "precip_prob": 75, "wind_kmh": 28, "thunder": false, "summary": "Rain"},
+    {"start": "14:30", "end": "15:00", "precip_prob": 80, "wind_kmh": 34, "thunder": false, "summary": "Rain"},
+    {"start": "15:00", "end": "15:30", "precip_prob": 85, "wind_kmh": 38, "thunder": true, "summary": "Thunderstorm"},
+    {"start": "15:30", "end": "16:00", "precip_prob": 70, "wind_kmh": 30, "thunder": true, "summary": "Thunderstorm"},
+    {"start": "16:00", "end": "16:30", "precip_prob": 65, "wind_kmh": 26, "thunder": false, "summary": "Rain easing"},
+    {"start": "16:30", "end": "17:00", "precip_prob": 40, "wind_kmh": 18, "thunder": false, "summary": "Light rain"},
+    {"start": "17:00", "end": "18:00", "precip_prob": 20, "wind_kmh": 14, "thunder": false, "summary": "Clearing"},
+    {"start": "18:00", "end": "19:00", "precip_prob": 10, "wind_kmh": 10, "thunder": false, "summary": "Clear"},
+    {"start": "19:00", "end": "20:00", "precip_prob": 5, "wind_kmh": 8, "thunder": false, "summary": "Clear"}
+  ]
+}

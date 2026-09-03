@@ -12,6 +12,8 @@ from urllib.parse import urlsplit
 
 from dotenv import load_dotenv
 
+from app.models import hhmm_to_minutes, minutes_to_hhmm
+
 # Load .env from the project root (no-op when absent / already in env)
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
@@ -130,6 +132,32 @@ class Settings:
         self.manual_recovery_baseline_minutes = int(_env("MANUAL_RECOVERY_BASELINE_MINUTES", "90"))
         self.db_path = Path(_env("DB_PATH", "instance/backlot.db"))
         self.seed_dir = Path(_env("SEED_DIR", "seed"))
+        # Weather-aware suggestions (Google Weather API, Maps Platform key —
+        # the Vertex service account does NOT apply). Fixture-first: demo
+        # runs offline from seed/weather/*.json; the key only enables the
+        # manual "Refresh forecast" live fetch. Malformed env values fall
+        # back to the documented defaults — a bad secret must never prevent
+        # boot.
+        self.google_maps_api_key = _env("GOOGLE_MAPS_API_KEY")
+        try:
+            self.weather_precip_pct = float(_env("WEATHER_PRECIP_PCT", "60"))
+            self.weather_wind_kmh = float(_env("WEATHER_WIND_KMH", "40"))
+            self.weather_cache_max_age_min = int(_env("WEATHER_CACHE_MAX_AGE_MIN", "60"))
+        except ValueError:
+            self.weather_precip_pct = 60.0
+            self.weather_wind_kmh = 40.0
+            self.weather_cache_max_age_min = 60
+        # Demo clock override (HH:MM): pins every "now" the AD console uses —
+        # replans and the weather advisory's past/future window filter — so
+        # recorded demos are stable regardless of the server's timezone
+        # (Replit runs UTC). Invalid values are ignored.
+        self.demo_clock = ""
+        raw_clock = _env("NOW_OVERRIDE")
+        if raw_clock:
+            try:
+                self.demo_clock = minutes_to_hhmm(hhmm_to_minutes(raw_clock))
+            except ValueError:
+                self.demo_clock = ""
         # Canonical external origin for generated absolute links (QR payloads).
         # Never derive this from the request Host header: see trusted_hosts.
         self.public_base_url = _env("PUBLIC_BASE_URL").rstrip("/")

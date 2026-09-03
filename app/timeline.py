@@ -22,6 +22,17 @@ class BlockedWindow:
     end: int
 
 
+def spans_intersect(
+    a_start: int, a_end: int, b_start: int, b_end: int
+) -> bool:
+    """Half-open interval intersection: [a_start, a_end) ∩ [b_start, b_end) ≠ ∅.
+
+    The single overlap definition shared by the timeline builder's wait
+    decision, the validator's blocked check, and the weather advisory.
+    """
+    return a_start < b_end and a_end > b_start
+
+
 @dataclass
 class PlanContext:
     production: Production
@@ -34,7 +45,7 @@ class PlanContext:
         if location_id is None:
             return False
         return any(
-            w.location_id == location_id and start < w.end and end > w.start
+            w.location_id == location_id and spans_intersect(start, end, w.start, w.end)
             for w in self.blocked_windows
         )
 
@@ -49,9 +60,11 @@ def scene_duration(scene: Scene, rbc: RuleBookContext) -> int:
 def build_timeline(order_items: list[str], ctx: PlanContext) -> list[TimelineSlot]:
     """Compute the wall-clock timeline for an ordered list of items.
 
-    Blocked locations implicitly force a wait: work at a blocked location
-    cannot start before the window clears, so the clock jumps to window end
-    (the crew does prep/idles — physically what actually happens).
+    Blocked locations implicitly force a wait: work that would overlap the
+    blocked window cannot start before the window clears, so the clock jumps
+    to window end (the crew does prep/idles — physically what actually
+    happens). Work that fully wraps before a future window opens is left
+    alone (see Incident.blocked_from).
     """
     clock = ctx.earliest_start
     prev_location: str | None = None
@@ -63,12 +76,24 @@ def build_timeline(order_items: list[str], ctx: PlanContext) -> list[TimelineSlo
             clock += duration
             continue
         scene = ctx.scene(item_id)
-        for w in ctx.blocked_windows:
-            if w.location_id == scene.location_id and clock < w.end:
-                clock = w.end
-        if prev_location is not None and scene.location_id != prev_location:
-            clock += ctx.rbc.travel(prev_location, scene.location_id)
         duration = scene_duration(scene, ctx.rbc)
+        # The travel lead-in is part of the span the scene will actually
+        # occupy, so the wait decision below must include it — otherwise a
+        # scene can be scheduled inside a FUTURE window it drives into.
+        travel = 0
+        if prev_location is not None and scene.location_id != prev_location:
+            travel = ctx.rbc.travel(prev_location, scene.location_id)
+        for w in ctx.blocked_windows:
+            # Only intersecting the window forces a wait: a scene that fully
+            # fits before a FUTURE block starts (blocked_from > now) shoots as
+            # planned instead of idling until the window ends. Windows that
+            # started at/before 'now' (start <= clock) keep legacy behavior —
+            # the overlap test is then always true.
+            if w.location_id == scene.location_id and spans_intersect(
+                clock + travel, clock + travel + duration, w.start, w.end
+            ):
+                clock = w.end  # wait out the block; travel still applies after
+        clock += travel
         slots.append(
             TimelineSlot(item_id, clock, clock + duration, scene.location_id, scene.title)
         )

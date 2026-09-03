@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import time
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Annotated
 
 import segno
@@ -14,7 +14,7 @@ from app.agents.editor import FallbackRequired as EditFallback, manual_edit_inte
 from app.agents.intake import FallbackRequired, parse_incident
 from app.agents.narrator import narrate, narrate_plan
 from app.edit_ops import EditError, apply_edits
-from app.engine import STRATEGIES, baseline_context, replan
+from app.engine import STRATEGIES, baseline_context, baseline_day_items, replan
 from app.models import EDIT_ACTIONS, Incident, hhmm_to_minutes
 from app.schedule_view import changes_for_person, compute_calls
 from app.serialize import option_stats, proposal_to_dict, timeline_rows
@@ -26,17 +26,38 @@ from app.tokens import (
     subject_token,
     sync_token_state,
 )
+from app.weather import (
+    build_reports,
+    fetch_live,
+    read_cache,
+    resolve_forecast,
+    save_live_forecasts,
+)
 from app.web import STATIC_DIR
 
 router = APIRouter()
 
 
-def _now_minutes(override: str | None) -> int:
-    """Demo clock: explicit HH:MM override wins; otherwise wall clock."""
+def _now_minutes(override: str | None, settings=None) -> int:
+    """Demo clock: explicit HH:MM override wins; then the configured
+    NOW_OVERRIDE (timezone-stable demos); otherwise wall clock."""
     if override:
         return hhmm_to_minutes(override)
+    configured = getattr(settings, "demo_clock", "") if settings is not None else ""
+    if configured:
+        return hhmm_to_minutes(configured)
     now = datetime.now()
     return now.hour * 60 + now.minute
+
+
+def _parse_hhmm_or_none(value: str) -> int | None:
+    """Strict HH:MM parse for form input; None when absent or malformed."""
+    if not value:
+        return None
+    try:
+        return hhmm_to_minutes(value)
+    except ValueError:
+        return None
 
 
 def _token_for(state, kind: str, subject_id: str) -> str:
@@ -124,6 +145,8 @@ def dashboard(request: Request, msg: str = ""):
     )
     links_expired = not links_valid(st.token_issued_at, st.settings.token_ttl_hours)
 
+    weather_ctx = _weather_context(st, published, base_ctx)
+
     return st.templates.TemplateResponse(
         request,
         "ad_dashboard.html",
@@ -141,9 +164,53 @@ def dashboard(request: Request, msg: str = ""):
             "recovery_stat": recovery_stat,
             "links_expiry_display": links_expiry_display,
             "links_expired": links_expired,
+            "weather": weather_ctx,
             "msg": msg,
         },
     )
+
+
+def _weather_context(st, published: dict | None, base_ctx) -> dict | None:
+    """Weather-watch card data for the dashboard.
+
+    Fully defensive: any failure (missing fixtures, bad cache, unexpected
+    forecast shape) omits the card silently instead of breaking the page.
+    Remaining EXT scenes are read from the live published plan when one
+    exists (completed scenes already excluded), else the baseline day.
+    """
+    try:
+        settings = st.settings
+        production = st.production
+        now_minutes = _now_minutes(None, settings)
+        timeline = (
+            published.get("proposed_timeline")
+            if published
+            else build_timeline(baseline_day_items(production, st.rbc), base_ctx)
+        )
+        cache_path = settings.db_path.parent / "weather_cache.json"
+        cached = read_cache(cache_path)  # one read per request, not per location
+        forecasts = {}
+        for loc in production.locations.values():
+            forecast = resolve_forecast(
+                loc.id, settings.seed_dir, cache_path, settings, cache=cached
+            )
+            if forecast is not None:
+                forecasts[loc.id] = forecast
+        if not forecasts:
+            return None
+        reports = build_reports(production, timeline, forecasts, now_minutes, settings)
+        return {
+            "reports": reports,
+            "now": now_minutes,
+            "live_configured": bool(settings.google_maps_api_key),
+            "precip_pct": settings.weather_precip_pct,
+            "wind_kmh": settings.weather_wind_kmh,
+        }
+    except Exception:  # noqa: BLE001 - advisory must never break the dashboard
+        import traceback
+
+        traceback.print_exc()
+        return None
 
 
 @router.get("/incident")
@@ -152,7 +219,12 @@ def incident_form(request: Request):
     return st.templates.TemplateResponse(
         request,
         "incident_form.html",
-        {"locations": st.production.locations, "free_text": "", "fallback_reason": None},
+        {
+            "locations": st.production.locations,
+            "free_text": "",
+            "fallback_reason": None,
+            "error": None,
+        },
     )
 
 
@@ -164,6 +236,7 @@ async def create_incident(
     manual_type: Annotated[str, Form()] = "OTHER",
     manual_location: Annotated[str, Form()] = "",
     manual_blocked_until: Annotated[str, Form()] = "",
+    manual_blocked_from: Annotated[str, Form()] = "",
     manual_severity: Annotated[str, Form()] = "medium",
     completed: Annotated[list[str] | None, Form()] = None,
     now_override: Annotated[str, Form()] = "",
@@ -173,10 +246,36 @@ async def create_incident(
     settings, production, store = st.settings, st.production, st.store
 
     if force_manual == "1":
+        blocked_until_min = _parse_hhmm_or_none(manual_blocked_until)
+        blocked_from_min = _parse_hhmm_or_none(manual_blocked_from)
+        invalid_window = (
+            (manual_blocked_until and blocked_until_min is None)
+            or (manual_blocked_from and blocked_from_min is None)
+            or (
+                blocked_until_min is not None
+                and blocked_from_min is not None
+                and blocked_from_min >= blocked_until_min
+            )
+        )
+        if invalid_window:
+            return st.templates.TemplateResponse(
+                request,
+                "incident_form.html",
+                {
+                    "locations": production.locations,
+                    "free_text": free_text,
+                    "fallback_reason": None,
+                    "error": (
+                        "Invalid blocked window — use HH:MM and make "
+                        "'blocked from' earlier than 'blocked until'."
+                    ),
+                },
+            )
         incident = Incident(
             type=manual_type or "OTHER",
             location_id=manual_location or None,
             blocked_until=manual_blocked_until or None,
+            blocked_from=manual_blocked_from or None,
             severity=manual_severity or "medium",
             free_text=free_text or "(manual form)",
             confidence=1.0,
@@ -197,7 +296,7 @@ async def create_incident(
             )
 
     plan_id = uuid.uuid4().hex[:12]
-    now_minutes = _now_minutes(now_override or None)
+    now_minutes = _now_minutes(now_override or None, settings)
     has_blocking = bool(
         incident.location_id and incident.blocked_until_minutes() is not None
     )
@@ -227,13 +326,25 @@ async def create_incident(
         return RedirectResponse(f"/plans/{plan_id}", status_code=303)
 
     # Blocking incident → generate every recovery strategy as a sandbox group.
+    group_id = _sandbox_group_for_blocking_incident(
+        st, incident, [c for c in (completed or []) if c], now_minutes, t0
+    )
+    return RedirectResponse(f"/sandbox/{group_id}", status_code=303)
+
+
+def _sandbox_group_for_blocking_incident(
+    st, incident: Incident, completed_ids: list[str], now_minutes: int, t0: float
+) -> str:
+    """Run every recovery strategy for a blocking incident and persist the
+    resulting sandbox group. Shared by /incident and /weather/adopt so both
+    paths produce identical option sets. Returns the group id."""
     group_id = uuid.uuid4().hex[:12]
     for strategy_id in STRATEGIES:
         option_id = uuid.uuid4().hex[:12]
         proposal = replan(
-            production,
+            st.production,
             st.rbc,
-            completed_scene_ids=[c for c in (completed or []) if c],
+            completed_scene_ids=completed_ids,
             incident=incident,
             now_minutes=now_minutes,
             plan_id=option_id,
@@ -243,11 +354,97 @@ async def create_incident(
         )
         payload = proposal_to_dict(proposal)
         payload["now_minutes"] = now_minutes
-        store.save_plan(payload)
+        st.store.save_plan(payload)
     recovery_seconds = max(round(time.perf_counter() - t0, 2), 0.05)
-    for option in store.plans_in_group(group_id):
+    for option in st.store.plans_in_group(group_id):
         option["recovery_seconds"] = recovery_seconds
-        store.save_plan(option)
+        st.store.save_plan(option)
+    return group_id
+
+
+@router.post("/weather/refresh")
+def weather_refresh(request: Request):
+    """Manual live-forecast pull: Google Weather API -> runtime cache.
+
+    Fixture-first design: this is the ONLY network path, it runs on demand,
+    and failures keep the previous cache/fixtures untouched. Deliberately a
+    sync handler: the blocking HTTP fetches then run in FastAPI's threadpool
+    instead of stalling the event loop.
+    """
+    st = request.app.state
+    settings = st.settings
+    if not settings.google_maps_api_key:
+        return RedirectResponse(
+            "/?msg=Live+forecast+not+configured+-+set+GOOGLE_MAPS_API_KEY;"
+            "+committed+fixtures+stay+active",
+            status_code=303,
+        )
+    cache_path = settings.db_path.parent / "weather_cache.json"
+    coordinated = [
+        loc
+        for loc in st.production.locations.values()
+        if loc.lat is not None and loc.lng is not None
+    ]
+    results = {}
+    for loc in coordinated:
+        hours = fetch_live(loc, settings.google_maps_api_key)
+        if hours:
+            results[loc.id] = hours
+    msg = "Live+forecast+fetch+failed+-+keeping+current+fixtures/cache"
+    if results:
+        try:
+            save_live_forecasts(cache_path, results, datetime.now(timezone.utc))
+        except OSError:
+            # e.g. the atomic replace raced a concurrent cache reader on
+            # Windows, or the runtime dir is read-only: keep the previous
+            # forecast data rather than failing the request.
+            pass
+        else:
+            msg = f"Forecast+refreshed+-+live+from+Google+Weather+({len(results)}+of+{len(coordinated)}+locations)"
+    return RedirectResponse(f"/?msg={msg}", status_code=303)
+
+
+@router.post("/weather/adopt")
+async def weather_adopt(
+    request: Request,
+    location_id: Annotated[str, Form()] = "",
+    window_from: Annotated[str, Form(alias="from")] = "",
+    window_until: Annotated[str, Form(alias="until")] = "",
+    summary: Annotated[str, Form()] = "",
+):
+    """One-click pivot: materialize an advisory as a blocking WEATHER incident
+    and run the standard strategy sandbox for it."""
+    t0 = time.perf_counter()
+    st = request.app.state
+    location = st.production.locations.get(location_id)
+    start = _parse_hhmm_or_none(window_from)
+    until = _parse_hhmm_or_none(window_until)
+    if location is None or start is None or until is None or start >= until:
+        return RedirectResponse(
+            "/?msg=Weather+advisory+rejected+-+invalid+window;"
+            "+refresh+the+forecast+and+retry",
+            status_code=303,
+        )
+    incident = Incident(
+        type="WEATHER",
+        location_id=location.id,
+        blocked_from=window_from,
+        blocked_until=window_until,
+        severity="high",
+        free_text=(
+            f"Weather advisory: {location.name} hazardous "
+            f"{window_from}–{window_until}"
+            + (f" ({summary})" if summary else "")
+        ),
+        confidence=1.0,
+        source="weather_advisor",
+    )
+    now_minutes = _now_minutes(None, st.settings)
+    published = st.store.latest_published_plan()
+    completed_ids = list(published.get("completed_scene_ids") or []) if published else []
+    group_id = _sandbox_group_for_blocking_incident(
+        st, incident, completed_ids, now_minutes, t0
+    )
     return RedirectResponse(f"/sandbox/{group_id}", status_code=303)
 
 
@@ -319,7 +516,7 @@ async def create_edit(
         else:
             edits = parse_edit_intents(free_text, settings, production, store)
 
-        now_minutes = _now_minutes(now_override or None)
+        now_minutes = _now_minutes(now_override or None, settings)
         proposal = apply_edits(
             production,
             st.rbc,

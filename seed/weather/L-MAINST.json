@@ -1,0 +1,20 @@
+{
+  "location_id": "L-MAINST",
+  "source": "fixture",
+  "generated_at": "2026-09-01T06:30:00",
+  "hours": [
+    {"start": "07:00", "end": "08:00", "precip_prob": 10, "wind_kmh": 10, "thunder": false, "summary": "Clear"},
+    {"start": "08:00", "end": "09:00", "precip_prob": 10, "wind_kmh": 11, "thunder": false, "summary": "Clear"},
+    {"start": "09:00", "end": "10:00", "precip_prob": 10, "wind_kmh": 13, "thunder": false, "summary": "Sunny"},
+    {"start": "10:00", "end": "11:00", "precip_prob": 15, "wind_kmh": 16, "thunder": false, "summary": "Sunny"},
+    {"start": "11:00", "end": "12:00", "precip_prob": 20, "wind_kmh": 19, "thunder": false, "summary": "Breezy"},
+    {"start": "12:00", "end": "13:00", "precip_prob": 25, "wind_kmh": 24, "thunder": false, "summary": "Breezy"},
+    {"start": "13:00", "end": "14:00", "precip_prob": 30, "wind_kmh": 26, "thunder": false, "summary": "Breezy"},
+    {"start": "14:00", "end": "15:00", "precip_prob": 30, "wind_kmh": 25, "thunder": false, "summary": "Breezy"},
+    {"start": "15:00", "end": "16:00", "precip_prob": 25, "wind_kmh": 22, "thunder": false, "summary": "Breezy"},
+    {"start": "16:00", "end": "17:00", "precip_prob": 20, "wind_kmh": 18, "thunder": false, "summary": "Partly cloudy"},
+    {"start": "17:00", "end": "18:00", "precip_prob": 15, "wind_kmh": 14, "thunder": false, "summary": "Clear"},
+    {"start": "18:00", "end": "19:00", "precip_prob": 10, "wind_kmh": 11, "thunder": false, "summary": "Clear"},
+    {"start": "19:00", "end": "20:00", "precip_prob": 10, "wind_kmh": 9, "thunder": false, "summary": "Clear"}
+  ]
+}

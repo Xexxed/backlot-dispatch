@@ -274,6 +274,18 @@ h3 { margin: 0; font-size: 1rem; }
 .sandbox-card.is-selected { border-color: var(--ok); box-shadow: 0 0 0 1px rgba(85, 214, 155, 0.4); }
 .sandbox-card .responsive td:first-child { color: var(--muted); width: 38%; }
 
+.weather-panel .weather-loc { border-top: 1px solid var(--line); padding-top: 14px; margin-top: 14px; }
+.weather-panel .weather-loc:first-of-type { border-top: 0; padding-top: 0; margin-top: 0; }
+.weather-advisory {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin: 10px 0 0;
+}
+.weather-advisory form { flex-shrink: 0; }
+
 table {
   width: 100%;
   border-collapse: separate;

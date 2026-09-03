@@ -26,7 +26,11 @@ following configured values:
 - `GEMINI_MODEL`
 - `GOOGLE_CLOUD_PROJECT`
 - `GOOGLE_GENAI_USE_VERTEXAI`
+- `GOOGLE_MAPS_API_KEY` (optional — enables the manual live weather refresh;
+  without it the dashboard serves the committed fixtures in `seed/weather/`)
 - `GOOGLE_SERVICE_ACCOUNT_JSON`
+- `NOW_OVERRIDE` (optional HH:MM — pins the AD console's "now" so recorded
+  demos stay timezone-stable; Replit servers run UTC)
 - `PUBLIC_BASE_URL`
 - `TRUSTED_HOSTS`
 

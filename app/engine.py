@@ -126,6 +126,19 @@ def baseline_context(production: Production, rbc: RuleBookContext) -> PlanContex
     return make_context(production, rbc, production.call_time)
 
 
+def baseline_day_items(production: Production, rbc: RuleBookContext) -> list[str]:
+    """The original day's item order including the baseline lunch slot.
+
+    The timeline the weather advisory evaluates: lunch shifts the afternoon,
+    so a hazard window can only be matched against the day as actually
+    planned (the published plan's proposed_timeline carries MEAL_ID too).
+    """
+    ctx = baseline_context(production, rbc)
+    items = list(production.scene_order)
+    k = _meal_index(items, ctx)
+    return items[:k] + [MEAL_ID] + items[k:]
+
+
 # -------------------------------------------------------------------- passes
 def _repair_blocked(order: list[str], ctx: PlanContext) -> tuple[list[str], list[Change]]:
     """Move blocked-location work behind the rest of the day (stable partition).
@@ -149,21 +162,33 @@ def _repair_blocked(order: list[str], ctx: PlanContext) -> tuple[list[str], list
     slots = build_timeline(candidate, ctx)
     new_start_by_scene = {s.item_id: s.start for s in slots}
     window_end = max(w.end for w in ctx.blocked_windows)
+    window_start = min(w.start for w in ctx.blocked_windows)
+    window_span = f"{minutes_to_hhmm(window_start)}–{minutes_to_hhmm(window_end)}"
     for sid in affected:
         old_pos = order.index(sid)
         new_pos = candidate.index(sid)
         if old_pos == new_pos:
             continue
+        new_start = new_start_by_scene.get(sid)
+        if new_start is not None and new_start < window_start:
+            # Future window (blocked_from): the scene now shoots before the
+            # block opens instead of idling past it.
+            reason = (
+                f"Scene {sid} moved behind unblocked work — now shoots from "
+                f"{minutes_to_hhmm(new_start)}, clear of the {window_span} "
+                f"block at {sorted(blocked_locations)[0]}"
+            )
+        else:
+            reason = (
+                f"Scene {sid} moved behind unblocked work — "
+                f"{sorted(blocked_locations)[0]} blocked {window_span}"
+            )
         changes.append(
             Change(
                 scene_id=sid,
                 kind="MOVE",
                 rule_id="R-BLOCKED-LOCATION",
-                reason=(
-                    f"Scene {sid} moved behind unblocked work — "
-                    f"{sorted(blocked_locations)[0]} unavailable until "
-                    f"{minutes_to_hhmm(window_end)}"
-                ),
+                reason=reason,
                 params={
                     "new_start": new_start_by_scene.get(sid),
                     "blocked_until": window_end,
@@ -288,9 +313,11 @@ def _cover_set_seed(
 ) -> list[str]:
     """Blocked-location scenes shoot FIRST once the window clears.
 
-    The timeline builder makes them wait for the window (clock jump), so the
-    stalled unit resumes the moment the location reopens; everyone else
-    follows. Seed changes are recorded under R-COVER-SET.
+    The timeline builder makes intersecting work wait for the window (clock
+    jump), so the stalled unit resumes the moment the location reopens — or,
+    for a future window (blocked_from), shoots the morning before the block
+    even opens; everyone else follows. Seed changes are recorded under
+    R-COVER-SET.
     """
     if not ctx.blocked_windows:
         return order
@@ -304,8 +331,24 @@ def _cover_set_seed(
         return order
     slots = build_timeline(candidate, ctx)
     window_end = max(w.end for w in ctx.blocked_windows)
+    window_start = min(w.start for w in ctx.blocked_windows)
     for sid in affected:
         new_start = next(s.start for s in slots if s.item_id == sid)
+        if new_start < window_start:
+            # Future window (blocked_from): the unit shoots before the block
+            # opens at all — "reopens {end}" would be false.
+            reason = (
+                f"Scene {sid} moved ahead of unblocked work — shoots before "
+                f"the {minutes_to_hhmm(window_start)}–{minutes_to_hhmm(window_end)} "
+                f"block at {sorted(blocked_locations)[0]}"
+            )
+        else:
+            reason = (
+                f"Scene {sid} moved ahead of unblocked work — "
+                f"{sorted(blocked_locations)[0]} reopens "
+                f"{minutes_to_hhmm(window_end)}; stalled unit resumes "
+                f"immediately"
+            )
         _record(
             changes,
             seen,
@@ -313,12 +356,7 @@ def _cover_set_seed(
                 scene_id=sid,
                 kind="MOVE",
                 rule_id=RULE_COVER_SET,
-                reason=(
-                    f"Scene {sid} moved ahead of unblocked work — "
-                    f"{sorted(blocked_locations)[0]} reopens "
-                    f"{minutes_to_hhmm(window_end)}; stalled unit resumes "
-                    f"immediately"
-                ),
+                reason=reason,
                 params={"new_start": new_start, "blocked_until": window_end},
             ),
         )
@@ -356,10 +394,16 @@ def replan(
     if incident.location_id:
         until = incident.blocked_until_minutes()
         if until is not None:
+            # blocked_from (e.g. an afternoon storm window) pins the start so
+            # the morning is not over-blocked; absent or nonsensical input
+            # falls back to the legacy default: the block starts now.
+            start = incident.blocked_from_minutes()
+            if start is None or start >= until:
+                start = min(now_minutes, until)
             windows.append(
                 BlockedWindow(
                     location_id=incident.location_id,
-                    start=min(now_minutes, until),
+                    start=start,
                     end=until,
                 )
             )

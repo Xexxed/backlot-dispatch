@@ -12,7 +12,7 @@
 
 <div class="banner">
   <strong>Incident:</strong>
-  {{ incident.type }}{% if incident.location_id %} · {{ incident.location_id }}{% endif %}{% if incident.blocked_until %} blocked until {{ incident.blocked_until }}{% endif %}
+  {{ incident.type }}{% if incident.location_id %} · {{ incident.location_id }}{% endif %}{% if incident.blocked_from and incident.blocked_until %} blocked {{ incident.blocked_from }}–{{ incident.blocked_until }}{% elif incident.blocked_until %} blocked until {{ incident.blocked_until }}{% endif %}
   · severity {{ incident.severity }}
   {% if recovery_stat %}
   <div class="small" style="margin-top:0.4rem;">Agent pipeline: {{ recovery_stat.display }} (Gemini intake + {{ recovery_stat.baseline_display }} manual baseline · {{ options|length }} deterministic re-plans)</div>

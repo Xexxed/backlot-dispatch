@@ -14,10 +14,10 @@ ROOT = Path(__file__).resolve().parents[1]
 SEED = ROOT / "seed"
 
 LOCATIONS = """\
-location_id,name
-L-STAGE4,Stage 4 · KMI Lot
-L-RANCH,Harper Ranch — Exterior Yard
-L-MAINST,Main Street · Town Square
+location_id,name,lat,lng
+L-STAGE4,Stage 4 · KMI Lot,34.4329,-118.5716
+L-RANCH,Harper Ranch — Exterior Yard,34.4199,-118.5301
+L-MAINST,Main Street · Town Square,34.4208,-118.5550
 """
 
 TRAVELS = """\

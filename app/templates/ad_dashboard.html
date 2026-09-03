@@ -36,6 +36,8 @@
           </select>
           <label>Blocked until (HH:MM)</label>
           <input type="time" name="manual_blocked_until">
+          <label>Blocked from (optional — block starts later, e.g. reserved 12:00)</label>
+          <input type="time" name="manual_blocked_from">
         </div>
         <div>
           <label>Severity</label>
@@ -67,6 +69,47 @@
     <div class="form-actions"><button class="btn" type="submit">Run agents <span aria-hidden="true">→</span> re-optimize</button></div>
   </form>
 </section>
+
+{% if weather %}
+<section class="panel weather-panel">
+  <div class="section-heading">
+    <h2>Weather watch <span class="muted small">now {{ weather.now | hhmm }} · hazards: precip ≥{{ weather.precip_pct | round(0) | int }}%, thunderstorm, wind ≥{{ weather.wind_kmh | round(0) | int }} km/h</span></h2>
+    <form method="post" action="/weather/refresh" style="display:inline;">
+      <button class="btn secondary small" type="submit">↻ Refresh forecast</button>
+      {% if weather.live_configured %}<span class="muted small">live via Google Weather</span>
+      {% else %}<span class="muted small">fixture mode — set GOOGLE_MAPS_API_KEY for live</span>{% endif %}
+    </form>
+  </div>
+  {% for r in weather.reports %}
+  <div class="weather-loc">
+    <div class="panel-heading">
+      <h3>{{ r.location_name }}</h3>
+      <span class="muted small">updated {{ r.updated or '—' }} · source: {{ r.source }}</span>
+    </div>
+    {% for a in r.advisories %}
+    <div class="banner warn weather-advisory">
+      <div>
+        <strong>⚠ Hazard {{ a.start | hhmm }}–{{ a.end | hhmm }}</strong>
+        <span class="muted small">{{ a.reasons | join(', ') }}</span><br>
+        <span class="small">Threatens remaining EXT work:
+          {% for s in a.scenes %}{{ s.id }}{% if s.id in a.scene_spans %} ({{ a.scene_spans[s.id][0] | hhmm }}–{{ a.scene_spans[s.id][1] | hhmm }}){% endif %}{% if not loop.last %}, {% endif %}{% endfor %}
+        </span>
+      </div>
+      <form method="post" action="/weather/adopt">
+        <input type="hidden" name="location_id" value="{{ r.location_id }}">
+        <input type="hidden" name="from" value="{{ a.start | hhmm }}">
+        <input type="hidden" name="until" value="{{ a.end | hhmm }}">
+        <input type="hidden" name="summary" value="{{ a.reasons | join(', ') }}">
+        <button class="btn small" type="submit">Generate weather pivot plan <span aria-hidden="true">→</span></button>
+      </form>
+    </div>
+    {% else %}
+    <p class="muted small">No hazards above thresholds in the current forecast.</p>
+    {% endfor %}
+  </div>
+  {% endfor %}
+</section>
+{% endif %}
 
 {% if published %}
 <div class="banner live-banner">

@@ -66,7 +66,13 @@ def read_locations(path: Path, errors: list[str]) -> dict[str, Location]:
         if lid in out:
             errors.append(f"{path.name}:{line}: duplicate location_id {lid!r}")
             continue
-        out[lid] = Location(id=lid, name=name)
+        try:
+            lat = float(row["lat"]) if row.get("lat") else None
+            lng = float(row["lng"]) if row.get("lng") else None
+        except ValueError:
+            errors.append(f"{path.name}:{line}: lat/lng must be numeric when present")
+            continue
+        out[lid] = Location(id=lid, name=name, lat=lat, lng=lng)
     return out
 
 

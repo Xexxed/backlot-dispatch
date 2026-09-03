@@ -48,6 +48,13 @@ agent gracefully falls back to the manual form; every other feature works.
   machine-checkable `rule_id` (`R-BLOCKED-LOCATION`, `R-DAYLIGHT`,
   `R-MEAL-WINDOW`, `R-DEPS`, `R-MEAL-BREAK`, `R-TRAVEL`). Infeasible days
   produce explicit diagnostics — never a silent bad schedule.
+- **Weather-aware suggestions**: committed forecast fixtures (offline demo)
+  plus an optional manual live refresh from the Google Weather API (Maps
+  Platform). Hazard windows (precip ≥ `WEATHER_PRECIP_PCT`%, thunderstorm,
+  wind ≥ `WEATHER_WIND_KMH` km/h) that threaten remaining exterior work
+  become one-click blocking `WEATHER` incidents through the same
+  sandbox → review → publish pipeline; `Incident.blocked_from` keeps an
+  afternoon storm from voiding the morning.
 - **Narrator**: describes the optimizer's change list for crew comms; it can
   never alter schedule facts. Falls back to a deterministic template.
 - **Storage**: production entities live in CSV (`seed/`); runtime state
@@ -63,6 +70,9 @@ agent gracefully falls back to the manual form; every other feature works.
 5. **Publish** → per-person links + QR codes regenerate instantly.
 6. Open a crew link on a phone: new call time, what-changed-and-why, ack tap
    lands back on the AD dashboard.
+7. Weather beat: the "Weather watch" card flags the fixture storm at Harper
+   Ranch (14:00–16:30) threatening `SC-121`/`SC-125` → "Generate weather
+   pivot plan" runs the identical sandbox flow for a `WEATHER` incident.
 
 ## Security model
 
@@ -90,11 +100,20 @@ deployed keep working until the first explicit rotation.
   extend expiry — but on Replit's ephemeral filesystem a *redeploy* starts a
   fresh DB (epoch 0), so re-share links after redeploying if you have
   rotated. Acks are recorded per person and survive rotation.
+- **Weather (ops)**: the demo never needs a network — forecasts come from
+  committed fixtures in `seed/weather/`. `GOOGLE_MAPS_API_KEY` (Maps
+  Platform; NOT the Vertex service account) only enables the manual
+  "Refresh forecast" button, which writes `instance/weather_cache.json`;
+  the cache is trusted for `WEATHER_CACHE_MAX_AGE_MIN` minutes (default 60)
+  and a failed fetch keeps the previous data. Dashboards never block on
+  the network. For recorded demos, set `NOW_OVERRIDE=HH:MM` to pin the AD
+  console's clock so the advisory can't age out on a UTC-timed server
+  (Replit runs UTC).
 
 ## Tests
 
 ```powershell
-.venv\Scripts\python.exe -m pytest tests -q     # 107 tests: invariants, E2E, contracts
+.venv\Scripts\python.exe -m pytest tests -q     # 161 tests: invariants, E2E, contracts
 ```
 
 Key invariant: a proposal is feasible **iff** the independent validator finds
