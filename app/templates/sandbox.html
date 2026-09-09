@@ -51,8 +51,23 @@
       <tr><td>Wrap</td><td><strong>{{ o.wrap_hhmm }}</strong> <span class="muted small">({{ o.wrap_delta_display }} vs baseline)</span></td></tr>
       <tr><td>Lunch</td><td>{{ o.lunch_hhmm or '—' }}</td></tr>
       <tr><td>Scenes moved</td><td>{{ o.moves }}</td></tr>
+      {% if o.cost %}
+      <tr><td>Cost exposure</td><td><strong>${{ '{:,.0f}'.format(o.cost.total) }}</strong>
+        {% if o.cost.delta_vs_hold is not none and o.cost.delta_vs_hold < 0 %}<span class="chip ok">saves ${{ '{:,.0f}'.format(-o.cost.delta_vs_hold) }} vs hold</span>
+        {% elif o.cost.delta_vs_hold is not none and o.cost.delta_vs_hold > 0 %}<span class="muted small">+${{ '{:,.0f}'.format(o.cost.delta_vs_hold) }} vs hold</span>{% endif %}
+      </td></tr>
+      {% endif %}
       <tr><td>Compliance</td><td>{% if o.is_feasible %}<span class="chip ok">FEASIBLE</span>{% else %}<span class="chip err">{{ o.error_count }} issue{{ 's' if o.error_count != 1 else '' }}</span>{% endif %}</td></tr>
     </table>
+
+    {% if o.cost %}
+    <details class="small">
+      <summary>Cost breakdown (illustrative demo rates)</summary>
+      <ul>
+        {% for line in o.cost.lines %}<li>{{ line }}</li>{% endfor %}
+      </ul>
+    </details>
+    {% endif %}
 
     {% if o.diagnostics %}
     <ul class="small">

@@ -524,3 +524,15 @@ footer.site {
     transition-duration: 0.01ms !important;
   }
 }
+
+@media print {
+  nav, .page-header .chip, .card-actions, form, .btn, .voice-widget,
+  .weather-panel, .msg, footer { display: none !important; }
+  body { background: #fff; color: #000; font-size: 11pt; }
+  .panel, .banner { border: 1px solid #000; box-shadow: none; break-inside: avoid; }
+  .section-heading h2 { break-after: avoid; }
+  .grid.two { display: block; }
+  .grid.two > .panel { margin-bottom: 12px; }
+  pre { white-space: pre-wrap; }
+}
+

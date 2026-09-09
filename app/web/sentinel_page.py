@@ -28,6 +28,7 @@ from app.trace import RunRecorder
 from app.web.routes_ad import (
     _incident_pipeline_response,
     _now_minutes,
+    _price_option,
     _regenerate_qr_artifacts,
     _sandbox_group_for_blocking_incident,
 )
@@ -66,7 +67,11 @@ def _maybe_auto_publish(st, group_id: str, recorder: RunRecorder) -> dict | None
         return None
 
     plans = st.store.plans_in_group(group_id)
-    options = [option_stats(p) for p in plans]
+    options = []
+    for p in plans:
+        cost = _price_option(p, st)
+        stats = option_stats(p, cost)
+        options.append(stats)
     feasible = [o for o in options if o["is_feasible"]]
     if not feasible:
         return None

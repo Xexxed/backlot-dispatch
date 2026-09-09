@@ -283,8 +283,8 @@ def test_auto_publish_publishes_with_cost_data_and_ceilings(client, monkeypatch)
 
     real_option_stats = sp.option_stats
 
-    def priced(plan):
-        stats = real_option_stats(plan)
+    def priced(plan, cost=None):
+        stats = real_option_stats(plan, cost)
         stats["cost_total"] = costs[plan["strategy"]]
         return stats
 
@@ -319,8 +319,8 @@ def test_auto_publish_publishes_with_cost_data_and_ceilings(client, monkeypatch)
         }
     )
 
-    def priced2(plan):
-        stats = real_option_stats(plan)
+    def priced2(plan, cost=None):
+        stats = real_option_stats(plan, cost)
         stats["cost_total"] = 500.0
         return stats
 

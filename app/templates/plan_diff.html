@@ -33,8 +33,30 @@
     <strong>Agent pipeline:</strong> {{ recovery_stat.display }} · <strong>Manual baseline:</strong> {{ recovery_stat.baseline_display }} ({{ recovery_stat.speedup_display }}) <span class="muted small">(configurable industry assumption)</span>
   </div>
   {% endif %}
+  {% if cost %}
+  <div style="margin: 0.5rem 0; font-size: 0.95rem;">
+    <strong>Cost exposure:</strong> ${{ '{:,.0f}'.format(cost.total) }}
+    {% if cost.ot_hours %} · {{ '{:,.1f}'.format(cost.ot_hours) }}h OT{% endif %}
+    · {{ cost.company_moves }} company move{{ 's' if cost.company_moves != 1 else '' }}
+    {% if cost.penalty_meals %} · {{ cost.penalty_meals }} penalty-meal unit{{ 's' if cost.penalty_meals != 1 else '' }}{% endif %}
+    {% if hold_cost and cost.delta_vs_hold is not none %}
+      {% if cost.delta_vs_hold < 0 %}<span class="chip ok">saves ${{ '{:,.0f}'.format(-cost.delta_vs_hold) }} vs hold &amp; wait</span>
+      {% else %}<span class="muted small">+${{ '{:,.0f}'.format(cost.delta_vs_hold) }} vs hold &amp; wait</span>{% endif %}
+    {% endif %}
+    <span class="muted small">(illustrative demo rates)</span>
+  </div>
+  {% endif %}
   <pre>{{ plan.narration.text if plan.narration else '' }}</pre>
 </div>
+
+{% if cost %}
+<details class="small" style="margin-top:-0.75rem;">
+  <summary>Cost breakdown (illustrative demo rates)</summary>
+  <ul>
+    {% for line in cost.lines %}<li>{{ line }}</li>{% endfor %}
+  </ul>
+</details>
+{% endif %}
 
 <div class="section-heading"><h2>Change log <span class="muted small">(machine-checkable)</span></h2></div>
 <div class="panel table-panel">
@@ -104,5 +126,6 @@
     <button class="btn danger" type="submit">Acknowledge violations &amp; publish anyway</button>
   </form>
   {% endif %}
+  <button class="btn secondary" type="button" onclick="window.print()">Print call sheet</button>
 </section>
 {% endblock %}

@@ -18,7 +18,7 @@ from app.costs import RateCard, RateTier, price_plan
 from app.engine import STRATEGIES, replan
 from app.importers import ImportValidationError, load_rates
 from app.models import Incident
-from app.serialize import slot_rows
+from app.serialize import option_stats, slot_rows
 
 
 INCIDENT = Incident(
@@ -282,3 +282,121 @@ def test_conflicting_rate_rejected(tmp_path):
 
 def test_absent_rates_file_returns_none(tmp_path):
     assert load_rates(tmp_path) is None
+
+
+# ------------------------------------------------------------------ surfaces
+def test_sandbox_shows_cost_rows_with_rates(client):
+    """With seed/rates.csv present, every sandbox card carries a dollar
+    exposure and the hold anchor."""
+    resp = client.post(
+        "/incident",
+        data={
+            "force_manual": "1",
+            "manual_type": "LOCATION_BLOCKED",
+            "manual_location": "L-STAGE4",
+            "manual_blocked_until": "14:00",
+            "free_text": "Generator down",
+            "now_override": "11:40",
+        },
+        follow_redirects=False,
+    )
+    assert resp.status_code == 303
+    gid = resp.headers["location"].rsplit("/", 1)[-1]
+    page = client.get(f"/sandbox/{gid}").text
+    assert "Cost exposure" in page
+    assert "vs hold" in page
+    assert "illustrative demo rates" in page
+    st = client.app.state
+    plans = st.store.plans_in_group(gid)
+    stats = {p["strategy"]: option_stats(p, _price(p, st)) for p in plans}
+    assert stats["hold"]["cost_total"] > stats["minimal"]["cost_total"]
+    assert (
+        stats["minimal"]["cost_total"] - stats["hold"]["cost_total"] < 0
+    )  # minimal saves vs hold
+
+
+def _price(plan, st):
+    from app.costs import price_plan
+
+    return price_plan(plan, st.production, st.rbc, st.rates)
+
+
+def test_plan_diff_shows_breakdown_and_print_button(client):
+    resp = client.post(
+        "/incident",
+        data={
+            "force_manual": "1",
+            "manual_type": "LOCATION_BLOCKED",
+            "manual_location": "L-STAGE4",
+            "manual_blocked_until": "14:00",
+            "free_text": "Generator down",
+            "now_override": "11:40",
+        },
+        follow_redirects=False,
+    )
+    gid = resp.headers["location"].rsplit("/", 1)[-1]
+    plans = client.app.state.store.plans_in_group(gid)
+    page = client.get(f"/plans/{plans[0]['id']}").text
+    assert "Cost exposure" in page
+    assert "Crew hours" in page
+    assert "Print call sheet" in page
+    assert "Total exposure" in page
+
+
+def test_dashboard_banner_after_publish(client):
+    """Publish the minimal option of a group: the dashboard banner states the
+    exposure vs Hold & wait with a positive 'Avoided' figure."""
+    resp = client.post(
+        "/incident",
+        data={
+            "force_manual": "1",
+            "manual_type": "LOCATION_BLOCKED",
+            "manual_location": "L-STAGE4",
+            "manual_blocked_until": "14:00",
+            "free_text": "Generator down",
+            "now_override": "11:40",
+        },
+        follow_redirects=False,
+    )
+    gid = resp.headers["location"].rsplit("/", 1)[-1]
+    plans = client.app.state.store.plans_in_group(gid)
+    minimal = next(p for p in plans if p["strategy"] == "minimal")
+    client.post(f"/plans/{minimal['id']}/select", follow_redirects=False)
+    client.post(f"/plans/{minimal['id']}/publish", follow_redirects=False)
+    dash = client.get("/").text
+    assert "Option exposure:" in dash
+    assert "vs Hold &amp; wait:" in dash
+    assert "Avoided $" in dash
+
+
+def test_no_rates_pages_render_unchanged(client, monkeypatch):
+    """With the ledger off (rates None), the same pages render with NO cost
+    rows, banner, or print banner — and option_stats stays None-safe."""
+    st = client.app.state
+    monkeypatch.setattr(st, "rates", None)
+    resp = client.post(
+        "/incident",
+        data={
+            "force_manual": "1",
+            "manual_type": "LOCATION_BLOCKED",
+            "manual_location": "L-STAGE4",
+            "manual_blocked_until": "14:00",
+            "free_text": "Generator down",
+            "now_override": "11:40",
+        },
+        follow_redirects=False,
+    )
+    gid = resp.headers["location"].rsplit("/", 1)[-1]
+    page = client.get(f"/sandbox/{gid}").text
+    assert "Cost exposure" not in page
+    assert "illustrative demo rates" not in page
+    plans = st.store.plans_in_group(gid)
+    minimal = next(p for p in plans if p["strategy"] == "minimal")
+    diff_page = client.get(f"/plans/{minimal['id']}").text
+    assert "Cost exposure" not in diff_page
+    assert "Print call sheet" in diff_page  # button harmless without rates
+    client.post(f"/plans/{minimal['id']}/publish", follow_redirects=False)
+    dash = client.get("/").text
+    assert "Option exposure:" not in dash
+    stats = option_stats(minimal)
+    assert stats["cost_total"] is None and stats["penalty_meals"] is None

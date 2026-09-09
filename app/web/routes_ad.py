@@ -16,9 +16,10 @@ from app.agents.editor import FallbackRequired as EditFallback, manual_edit_inte
 from app.agents.critic import recommend as critic_recommend
 from app.agents.intake import FallbackRequired, parse_incident, parse_incident_voice
 from app.agents.narrator import narrate, narrate_plan
+from app.costs import price_plan
 from app.edit_ops import EditError, apply_edits
 from app.engine import STRATEGIES, baseline_context, baseline_day_items, replan
-from app.models import EDIT_ACTIONS, Incident, hhmm_to_minutes
+from app.models import EDIT_ACTIONS, Incident, hhmm_to_minutes, minutes_to_hhmm
 from app.schedule_view import changes_for_person, compute_calls
 from app.serialize import option_stats, proposal_to_dict, timeline_rows
 from app.store import utc_now_iso
@@ -152,6 +153,7 @@ def dashboard(request: Request, msg: str = ""):
     weather_ctx = _weather_context(st, published, base_ctx)
     exceptions = _exceptions_context(st)
     sentinel_ctx = _sentinel_view_context(st, published, base_ctx, acked_ids)
+    cost_banner = _cost_banner(st, published)
 
     return st.templates.TemplateResponse(
         request,
@@ -173,6 +175,7 @@ def dashboard(request: Request, msg: str = ""):
             "weather": weather_ctx,
             "exceptions": exceptions,
             "sentinel_last": sentinel_ctx,
+            "cost_banner": cost_banner,
             "msg": msg,
         },
     )
@@ -745,6 +748,63 @@ async def create_edit(
     return RedirectResponse(f"/plans/{proposal.id}", status_code=303)
 
 
+# --------------------------------------------------------------- cost ledger
+def _price_option(plan: dict, st):
+    """CostBreakdown for one plan payload, or None when the ledger is off."""
+    if getattr(st, "rates", None) is None:
+        return None
+    try:
+        return price_plan(plan, st.production, st.rbc, st.rates)
+    except Exception:  # noqa: BLE001 - display data must never break a page
+        return None
+
+
+def _cost_banner(st, published: dict | None):
+    """One-line business case for the dashboard: published plan's exposure vs
+    the hold option of the same group (None anywhere → no banner)."""
+    if published is None or getattr(st, "rates", None) is None:
+        return None
+    cost = _price_option(published, st)
+    if cost is None:
+        return None
+    hold = None
+    group_id = published.get("group_id") or ""
+    if group_id:
+        hold = next(
+            (
+                p
+                for p in st.store.plans_in_group(group_id)
+                if p.get("strategy") == "hold"
+            ),
+            None,
+        )
+    hold_cost = _price_option(hold, st) if hold is not None else None
+    saved = None
+    if hold_cost is not None and hold_cost.total > cost.total:
+        saved = hold_cost.total - cost.total
+    return {
+        "total": cost.total,
+        "penalty_meals": cost.penalty_meals,
+        "wrap_hhmm": minutes_to_hhmm(
+            max(
+                (r.get("end") or 0 for r in published.get("proposed_timeline") or []),
+                default=0,
+            )
+        ),
+        "hold_total": hold_cost.total if hold_cost is not None else None,
+        "hold_penalty_meals": hold_cost.penalty_meals if hold_cost is not None else None,
+        "hold_wrap_hhmm": minutes_to_hhmm(
+            max(
+                (r.get("end") or 0 for r in (hold or {}).get("proposed_timeline") or []),
+                default=0,
+            )
+        )
+        if hold is not None
+        else None,
+        "saved": saved,
+    }
+
+
 @router.get("/sandbox/{group_id}")
 def sandbox(request: Request, group_id: str, msg: str = ""):
     st = request.app.state
@@ -753,12 +813,18 @@ def sandbox(request: Request, group_id: str, msg: str = ""):
         return PlainTextResponse("Unknown scenario.", status_code=404)
     order_index = {sid: i for i, sid in enumerate(STRATEGIES)}
     options = []
+    costs = {p.get("strategy", ""): _price_option(p, st) for p in plans}
+    hold_total = costs.get("hold").total if costs.get("hold") is not None else None
     for p in plans:
-        stats = option_stats(p)
+        cost = costs.get(p.get("strategy", ""))
+        if cost is not None and hold_total is not None:
+            cost.delta_vs_hold = cost.total - hold_total
+        stats = option_stats(p, cost)
         strat = STRATEGIES.get(stats["strategy"])
         stats["strategy_label"] = strat.name if strat else stats["strategy"]
         stats["tagline"] = strat.tagline if strat else ""
         stats["plan"] = p
+        stats["cost"] = cost  # full breakdown for the card's breakdown details
         options.append(stats)
     options.sort(key=lambda o: order_index.get(o["strategy"], 99))
     published_id = next(
@@ -827,6 +893,22 @@ def plan_diff(request: Request, plan_id: str, msg: str = ""):
     proposed_rows = timeline_rows(plan["proposed_timeline"], st.production)
     moved_ids = {c["scene_id"] for c in plan["changes"] if c.get("scene_id")}
     recovery_stat = _recovery_stat(plan, st.settings)
+
+    cost = _price_option(plan, st)
+    hold_cost = None
+    if cost is not None and plan.get("group_id"):
+        hold = next(
+            (
+                p
+                for p in st.store.plans_in_group(plan["group_id"])
+                if p.get("strategy") == "hold"
+            ),
+            None,
+        )
+        if hold is not None:
+            hold_cost = _price_option(hold, st)
+            if hold_cost is not None:
+                cost.delta_vs_hold = cost.total - hold_cost.total
     return st.templates.TemplateResponse(
         request,
         "plan_diff.html",
@@ -836,6 +918,8 @@ def plan_diff(request: Request, plan_id: str, msg: str = ""):
             "proposed_rows": proposed_rows,
             "moved_ids": moved_ids,
             "recovery_stat": recovery_stat,
+            "cost": cost,
+            "hold_cost": hold_cost,
             "msg": msg,
         },
     )

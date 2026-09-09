@@ -132,6 +132,19 @@
 </div>
 {% endif %}
 
+{% if cost_banner %}
+<div class="banner">
+  <div>
+    <strong>Option exposure:</strong> ${{ '{:,.0f}'.format(cost_banner.total) }} · {{ cost_banner.penalty_meals }} penalty-meal unit{{ 's' if cost_banner.penalty_meals != 1 else '' }} · wrap {{ cost_banner.wrap_hhmm }}
+    {% if cost_banner.hold_total is not none %}
+      — vs Hold &amp; wait: ${{ '{:,.0f}'.format(cost_banner.hold_total) }} · {{ cost_banner.hold_penalty_meals }} penalty-meal unit{{ 's' if cost_banner.hold_penalty_meals != 1 else '' }} · wrap {{ cost_banner.hold_wrap_hhmm }}.
+      {% if cost_banner.saved %}<span class="chip ok">Avoided ${{ '{:,.0f}'.format(cost_banner.saved) }} of exposure</span>{% endif %}
+    {% endif %}
+    <span class="muted small">(illustrative demo rates)</span>
+  </div>
+</div>
+{% endif %}
+
 {% if sentinel_last %}
 <section class="panel weather-panel">
   <div class="section-heading">
