@@ -94,17 +94,46 @@ def test_step_body_exception_recorded_then_reraised(tmp_path):
 
 def test_next_start_marks_stale_running_rows_failed(tmp_path):
     """Crash mid-request leaves a 'running' row; the next request's start_run
-    quarantines it — at most one orphan, and it is visible as failed."""
-    from app.store import Store
+    quarantines it (after the staleness window) — the orphan is visible as
+    failed, and a FRESH concurrent run is left untouched."""
+    import sqlite3
+    from datetime import datetime, timedelta, timezone
+
+    from app.store import STALE_RUNNING_MIN, Store
 
     store = Store(tmp_path / "t.db")
     rec1 = RunRecorder(store, "text").start()
-    # simulate the crash: no finish_run happens for rec1
+    # simulate the crash: backdate rec1's started_at past the staleness
+    # window, then open a new run (no finish_run happened for rec1)
+    old = (datetime.now(timezone.utc) - timedelta(minutes=STALE_RUNNING_MIN + 1)
+           ).isoformat(timespec="seconds")
+    store._conn.execute("UPDATE agent_runs SET started_at = ? WHERE id = ?",
+                        (old, rec1.run_id))
+    store._conn.commit()
     RunRecorder(store, "text").start()
     runs = store.recent_runs(limit=10)
     by_id = {r["id"]: r for r in runs}
     assert by_id[rec1.run_id]["status"] == "failed"
     assert len([r for r in runs if r["status"] == "running"]) == 1
+    store.close()
+
+
+def test_next_start_leaves_fresh_concurrent_run_alone(tmp_path):
+    """A 'running' row from a concurrently executing pipeline (recent
+    started_at) is NOT quarantined by another run's start_run."""
+    from datetime import datetime, timedelta, timezone
+
+    from app.store import Store
+
+    store = Store(tmp_path / "t.db")
+    rec1 = RunRecorder(store, "text").start()
+    recent = (datetime.now(timezone.utc) - timedelta(minutes=1)
+              ).isoformat(timespec="seconds")
+    store._conn.execute("UPDATE agent_runs SET started_at = ? WHERE id = ?",
+                        (recent, rec1.run_id))
+    store._conn.commit()
+    RunRecorder(store, "text").start()
+    assert store.get_run(rec1.run_id)["status"] == "running"
     store.close()
 
 

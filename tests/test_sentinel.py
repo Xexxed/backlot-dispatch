@@ -239,13 +239,13 @@ def test_auto_publish_respects_ceilings(client):
     # Reachable ceilings require cost data, which this deployment lacks —
     # fail-closed: still no auto-publish even with big ceilings.
     st.settings.auto_publish_max_usd = 100000
-    st.settings.auto_publish_max_minutes_moved = 100
+    st.settings.auto_publish_max_moves = 100
     body2 = client.post("/sentinel/tick").json()
     assert all(r.get("auto_published") is None for r in body2["raised"])
     st.settings.demo_clock = ""
     st.settings.governance_mode = "advise"
     st.settings.auto_publish_max_usd = 0
-    st.settings.auto_publish_max_minutes_moved = 0
+    st.settings.auto_publish_max_moves = 0
 
 
 def test_auto_publish_publishes_with_cost_data_and_ceilings(client, monkeypatch):
@@ -258,7 +258,7 @@ def test_auto_publish_publishes_with_cost_data_and_ceilings(client, monkeypatch)
 
     st.settings.governance_mode = "auto_low"
     st.settings.auto_publish_max_usd = 100000.0
-    st.settings.auto_publish_max_minutes_moved = 100
+    st.settings.auto_publish_max_moves = 100
 
     # Craft a feasible sentinel-raised sandbox group directly in the store.
     gid = "autogroup"
@@ -332,7 +332,7 @@ def test_auto_publish_publishes_with_cost_data_and_ceilings(client, monkeypatch)
 
     st.settings.governance_mode = "advise"
     st.settings.auto_publish_max_usd = 0
-    st.settings.auto_publish_max_minutes_moved = 0
+    st.settings.auto_publish_max_moves = 0
 
 
 def test_dashboard_shows_sentinel_card(client):

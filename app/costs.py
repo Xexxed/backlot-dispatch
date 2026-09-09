@@ -6,10 +6,11 @@ touches feasibility, diagnostics, or the publish gate — cost is advisory
 display data only ("AI suggests, the engine decides, the dollar explains").
 
 Model (v1, documented simplifications):
-  * per-department on-clock span = last scene end involving the department
-    minus first scene start involving it (meals included — the crew is on
-    the clock through lunch);
-  * Cast priced as one department (all cast members on their scenes' span);
+  * per-department hours = the sum of each scene's duration that involves
+    the department (span gaps and lunch are NOT billed — a documented v1
+    simplification, not an on-clock span);
+  * Cast priced as one department (all cast members on their scenes'
+    durations);
   * hours past the first threshold bill overtime in bands: hours between
     tier 1 and tier 2 thresholds at tier 1's multiplier, hours beyond tier 2
     at tier 2's multiplier (union-style band math, priciest band last);

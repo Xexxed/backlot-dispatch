@@ -56,7 +56,7 @@
 <section class="panel">
   <div class="section-heading"><h2>Can't make it, or running late?</h2></div>
   <p class="muted small">Tell the AD directly — your reply lands on their dashboard instantly. The system stores the time fact; it does not keep your story.</p>
-  {% include "_voice_widget.html" %}
+  {% with voice_action = '/c/' ~ token ~ '/reply/voice' %}{% include "_voice_widget.html" %}{% endwith %}
   <form method="post" action="/c/{{ token }}/reply">
     <label for="free_text">Or type your reply</label>
     <textarea id="free_text" name="free_text" rows="2"

@@ -251,6 +251,7 @@ def parse_reply_voice(
     (evidence logs carry lengths only)."""
     if not audio:
         raise FallbackRequired("Empty recording — record again or tap a button.")
+    mime = "audio/wav"
     if not settings.gemini_configured:
         if store:
             store.log_gcp_call(
@@ -263,7 +264,6 @@ def parse_reply_voice(
         raise FallbackRequired(
             "Gemini/Vertex credentials not configured — using the quick-reply form."
         )
-    mime = "audio/wav"
 
     def build(genai, types):
         if settings.use_vertexai:

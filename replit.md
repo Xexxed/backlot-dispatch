@@ -33,8 +33,9 @@ following configured values:
   demos stay timezone-stable; Replit servers run UTC)
 - `GOVERNANCE_MODE` (optional `advise` | `auto_low` | `off` — sentinel
   autonomy dial; default `advise` never auto-publishes)
-- `AUTO_PUBLISH_MAX_USD` / `AUTO_PUBLISH_MAX_MINUTES_MOVED` (optional
-  auto-publish ceilings under `auto_low`; 0 = unreachable)
+- `AUTO_PUBLISH_MAX_USD` / `AUTO_PUBLISH_MAX_MOVES` (optional
+  auto-publish ceilings under `auto_low`; 0 = unreachable; MAX_MOVES counts
+  scenes moved)
 - `PUBLIC_BASE_URL`
 - `TRUSTED_HOSTS`
 

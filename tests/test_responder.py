@@ -13,6 +13,9 @@ from __future__ import annotations
 
 import base64
 
+import pytest
+
+
 from app.agents.responder import manual_response
 from app.sentinel import CRITICAL_ROLES, is_critical_role
 
@@ -252,4 +255,38 @@ def test_responder_fallback_logged_not_configured(client):
     assert resp.status_code == 303
     calls = st.store.recent_gcp_calls()
     assert any(c["kind"] == "responder" and c["ok"] == 0 for c in calls)
+
+
+def test_voice_reply_unconfigured_falls_back_not_nameerror(client):
+    """Regression: a valid WAV reply with Gemini unconfigured must raise the
+    graceful FallbackRequired (mime is defined before the config check), not
+    a NameError from the evidence-log line."""
+    import struct
+
+    from app.agents.responder import FallbackRequired, parse_reply_voice
+
+    header = b"RIFF" + struct.pack("<I", 36) + b"WAVE" + b"fmt " + struct.pack(
+        "<IHHIIHH", 16, 1, 1, 16000, 32000, 2, 16
+    ) + b"data" + struct.pack("<I", 0)
+    calls: list[dict] = []
+
+    class LogSpy:
+        def log_gcp_call(self, *a, **k):
+            calls.append(k.get("meta", {}))
+
+    settings = client.app.state.settings
+    with pytest.raises(FallbackRequired) as exc:
+        parse_reply_voice(header + b"\x00" * 100, settings, LogSpy())
+    assert "quick-reply" in str(exc.value)
+    assert calls and calls[0].get("mime") == "audio/wav"
+
+
+def test_crew_card_voice_widget_targets_crew_endpoint(client):
+    """Regression: the crew card's voice recorder must post to
+    /c/{token}/reply/voice, never the AD-only /incident/voice."""
+    token = _first_token(client, "Camera")
+    _publish_a_plan(client)
+    page = client.get(f"/c/{token}").text
+    assert f'data-voice-action="/c/{token}/reply/voice"' in page
+    assert 'data-voice-action="/incident/voice"' not in page
 

@@ -27,7 +27,7 @@
       <td data-label="Agent">{{ s.agent }}</td>
       <td data-label="Kind"><span class="chip {{ 'ok' if s.kind == 'deterministic' else ('info' if s.kind == 'llm' else '') }}">{{ s.kind }}</span></td>
       <td data-label="Duration">{{ s.duration_display }}</td>
-      <td data-label="Status"><span class="chip {{ 'ok' if s.status == 'ok' else ('warn' if s.status == 'fallback' else 'err') }}">{{ s.status }}</span></td>
+      <td data-label="Status"><span class="chip {{ 'ok' if s.status == 'ok' else ('warn' if s.status in ('fallback', 'skipped') else 'err') }}">{{ s.status }}</span></td>
       <td data-label="Verdict">{{ s.verdict }}{% if s.summary %} <span class="muted small">— {{ s.summary }}</span>{% endif %}</td>
     </tr>
     {% endfor %}

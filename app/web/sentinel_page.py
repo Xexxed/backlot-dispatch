@@ -10,7 +10,7 @@ Governance dial (Settings):
   * advise (default) — file incidents, never publish; the human gate decides.
   * auto_low — additionally auto-publish the cheapest feasible option of a
     sentinel-raised group ONLY below both ceilings (max USD exposure and max
-    minutes moved); the skipped human gate is trace-logged with its reason.
+    scene moves); the skipped human gate is trace-logged with its reason.
   * off — evaluation disabled; tick answers immediately with nothing raised.
 
 The sentinel can never mutate a schedule directly — its only write paths are
@@ -63,7 +63,7 @@ def _maybe_auto_publish(st, group_id: str, recorder: RunRecorder) -> dict | None
     settings = st.settings
     if settings.governance_mode != "auto_low":
         return None
-    if settings.auto_publish_max_usd <= 0 or settings.auto_publish_max_minutes_moved <= 0:
+    if settings.auto_publish_max_usd <= 0 or settings.auto_publish_max_moves <= 0:
         return None
 
     plans = st.store.plans_in_group(group_id)
@@ -88,7 +88,7 @@ def _maybe_auto_publish(st, group_id: str, recorder: RunRecorder) -> dict | None
         return None  # no cost ledger here: ceilings cannot be verified
     if cheapest["cost_total"] > settings.auto_publish_max_usd:
         return None
-    if (cheapest.get("moves", 0) or 0) > settings.auto_publish_max_minutes_moved:
+    if (cheapest.get("moves", 0) or 0) > settings.auto_publish_max_moves:
         return None
 
     plan = next(p for p in plans if p["strategy"] == cheapest["strategy"])
@@ -145,7 +145,9 @@ def sentinel_tick(request: Request):
         replies=replies,
     )
 
-    day_key = f"{st.production.shoot_date}:{now_minutes // 60:02d}"
+    # One incident per (signal, day): a persisting signal (e.g. the meal
+    # clock) files exactly once for the day, however long it stays unresolved.
+    day_key = str(st.production.shoot_date)
     raised: list[dict] = []
     groups: list[str] = []
     for signal in signals:
@@ -172,6 +174,10 @@ def sentinel_tick(request: Request):
             auto = _maybe_auto_publish(st, group_id, recorder)
             if auto is not None:
                 _regenerate_qr_artifacts(request)
+                # The pipeline finished the run as awaiting_human before the
+                # gate-skip step; correct the terminal status to reflect the
+                # auto-publish that followed.
+                recorder.finish("published", {"plan_id": auto["plan_id"], "auto": True})
             raised.append(
                 {"id": signal.id, "severity": signal.severity, "title": signal.title,
                  "detail": signal.detail, "metric": signal.metric, "incident": True,

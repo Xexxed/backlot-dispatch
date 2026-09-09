@@ -17,6 +17,11 @@ def utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
+# A 'running' agent trace older than this is a crashed request, not a live
+# pipeline (longest legit run is a few Gemini round trips, well under 10 min).
+STALE_RUNNING_MIN = 10
+
+
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS plans (
     id TEXT PRIMARY KEY,
@@ -302,14 +307,35 @@ class Store:
 
     # -------------------------------------------------------- agent trace
     def start_run(self, run_id: str, trigger: str) -> None:
-        """Open a trace run. Any still-'running' row is a crashed request —
-        mark it failed so at most one orphan can ever exist per crash."""
+        """Open a trace run. Still-'running' rows older than
+        STALE_RUNNING_MIN minutes are crashed requests — quarantine them so
+        an orphan cannot persist. Fresh 'running' rows from concurrently
+        executing pipelines are left alone."""
+        cutoff = datetime.now(timezone.utc).timestamp() - STALE_RUNNING_MIN * 60
         with self._lock:
-            self._conn.execute(
-                "UPDATE agent_runs SET status = 'failed' WHERE status = 'running' "
-                "AND id != ?",
+            stale = self._conn.execute(
+                "SELECT id FROM agent_runs WHERE status = 'running' AND id != ?",
                 (run_id,),
-            )
+            ).fetchall()
+            for (old_id,) in stale:
+                row = self._conn.execute(
+                    "SELECT started_at FROM agent_runs WHERE id = ?", (old_id,)
+                ).fetchone()
+                try:
+                    started = datetime.fromisoformat(row["started_at"])
+                except (TypeError, ValueError):
+                    started = None
+                if started is None:
+                    age_ok = False
+                else:
+                    if started.tzinfo is None:
+                        started = started.replace(tzinfo=timezone.utc)
+                    age_ok = started.timestamp() <= cutoff
+                if age_ok:
+                    self._conn.execute(
+                        "UPDATE agent_runs SET status = 'failed' WHERE id = ?",
+                        (old_id,),
+                    )
             self._conn.execute(
                 "INSERT OR IGNORE INTO agent_runs (id, started_at, trigger, status) "
                 "VALUES (?,?,?,'running')",

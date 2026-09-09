@@ -174,12 +174,10 @@ class Settings:
         self.governance_mode = mode if mode in ("advise", "auto_low", "off") else "advise"
         try:
             self.auto_publish_max_usd = float(_env("AUTO_PUBLISH_MAX_USD", "0"))
-            self.auto_publish_max_minutes_moved = int(
-                _env("AUTO_PUBLISH_MAX_MINUTES_MOVED", "0")
-            )
+            self.auto_publish_max_moves = int(_env("AUTO_PUBLISH_MAX_MOVES", "0"))
         except ValueError:
             self.auto_publish_max_usd = 0.0
-            self.auto_publish_max_minutes_moved = 0
+            self.auto_publish_max_moves = 0
 
     @property
     def running_on_replit(self) -> bool:
