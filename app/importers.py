@@ -7,6 +7,10 @@ Files (utf-8, BOM tolerated), exported from Movie Magic / Excel:
   crew.csv      : crew_id,name,department,role,contact
   schedule.csv  : scene_id,title,page_count,location,int_ext,day_night,
                   cast_ids,departments,depends_on     (';' separated lists)
+  rates.csv     : department,hourly_rate,ot_multiplier,ot_threshold_hours,
+                  meal_penalty_per_person,company_move_cost   (optional; the
+                  cost ledger is enabled only when this file exists; a `*`
+                  wildcard department prices unknown departments)
 
 All cross-references are validated; every problem is collected and reported
 with its row number — imports either succeed completely or fail loudly.
@@ -233,3 +237,121 @@ def load_production(
         cast=cast,
         locations=locations,
     ), travel
+
+
+# ------------------------------------------------------------- rates card
+_RATE_COLUMNS = (
+    "department",
+    "hourly_rate",
+    "ot_multiplier",
+    "ot_threshold_hours",
+    "meal_penalty_per_person",
+    "company_move_cost",
+)
+
+
+def read_rates(path: Path, errors: list[str]) -> list[dict] | None:
+    """Parse rates.csv rows with the same loud, row-numbered validation style
+    as the other importers. Returns the raw rows (or None when malformed)."""
+    if not path.exists():
+        return None
+    rows: list[dict] = []
+    for line, row, required in _rows(path):
+        missing = [col for col in _RATE_COLUMNS if col not in required]
+        if missing:
+            errors.append(f"{path.name}: missing column(s) {', '.join(missing)}")
+            return None
+        prefix = f"{path.name}:{line}"
+        department = row.get("department", "").strip()
+        if not department:
+            errors.append(f"{prefix}: department is required")
+            continue
+        values: dict[str, float] = {}
+        for col in ("hourly_rate", "ot_multiplier", "ot_threshold_hours",
+                    "meal_penalty_per_person", "company_move_cost"):
+            try:
+                values[col] = float(row.get(col, ""))
+            except ValueError:
+                errors.append(f"{prefix}: {col} must be numeric")
+                values = {}
+                break
+        if not values:
+            continue
+        if values["hourly_rate"] <= 0:
+            errors.append(f"{prefix}: hourly_rate must be positive")
+            continue
+        if values["ot_multiplier"] < 1:
+            errors.append(f"{prefix}: ot_multiplier must be >= 1")
+            continue
+        if values["ot_threshold_hours"] < 1:
+            errors.append(f"{prefix}: ot_threshold_hours must be >= 1")
+            continue
+        if values["meal_penalty_per_person"] < 0 or values["company_move_cost"] < 0:
+            errors.append(f"{prefix}: penalty/move cost must be >= 0")
+            continue
+        values["department"] = department
+        rows.append(values)
+    return rows
+
+
+def load_rates(seed_dir: Path):
+    """Load the demo rate card; None only when rates.csv does not exist
+    (cost ledger off). Malformed files raise ImportValidationError loudly —
+    a bad rate card must never silently default a rate."""
+    from app.costs import RateCard, RateTier
+
+    path = Path(seed_dir) / "rates.csv"
+    if not path.exists():
+        return None
+    errors: list[str] = []
+    rows = read_rates(path, errors)
+    if rows is None:
+        raise ImportValidationError(errors or [f"{path.name}: unreadable"])
+    if errors:
+        raise ImportValidationError(errors)
+    if not rows:
+        raise ImportValidationError([f"{path.name}: no rate rows imported"])
+
+    departments: dict[str, float] = {}
+    tiers: dict[str, list[RateTier]] = {}
+    penalty: float | None = None
+    move_cost: float | None = None
+    wildcard_seen = False
+    for row in rows:
+        department = row["department"]
+        if department == "*":
+            wildcard_seen = True
+        if department in departments and departments[department] != row["hourly_rate"]:
+            raise ImportValidationError(
+                [f"{path.name}: conflicting hourly_rate for {department!r}"]
+            )
+        departments.setdefault(department, row["hourly_rate"])
+        tier = RateTier(row["ot_threshold_hours"], row["ot_multiplier"])
+        existing = tiers.setdefault(department, [])
+        if any(t.threshold_hours == tier.threshold_hours for t in existing):
+            raise ImportValidationError(
+                [f"{path.name}: duplicate ot_threshold_hours {tier.threshold_hours} for {department!r}"]
+            )
+        existing.append(tier)
+        if penalty is None:
+            penalty = row["meal_penalty_per_person"]
+        elif penalty != row["meal_penalty_per_person"]:
+            raise ImportValidationError(
+                [f"{path.name}: meal_penalty_per_person must be one global value"]
+            )
+        if move_cost is None:
+            move_cost = row["company_move_cost"]
+        elif move_cost != row["company_move_cost"]:
+            raise ImportValidationError(
+                [f"{path.name}: company_move_cost must be one global value"]
+            )
+    if not wildcard_seen:
+        raise ImportValidationError(
+            [f"{path.name}: a '*' wildcard department row is required"]
+        )
+    return RateCard(
+        departments=departments,
+        ot_tiers=tiers,
+        meal_penalty_per_person=penalty or 0.0,
+        company_move_cost=move_cost or 0.0,
+    )

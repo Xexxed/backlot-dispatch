@@ -1,0 +1,15 @@
+department,hourly_rate,ot_multiplier,ot_threshold_hours,meal_penalty_per_person,company_move_cost
+Camera,65,1.5,10,25,450
+G&E,55,1.5,10,25,450
+Sound,70,1.5,10,25,450
+Art,50,1.5,10,25,450
+AD/Production,45,1.5,10,25,450
+Cast,120,1.5,10,25,450
+Camera,65,2.0,12,25,450
+G&E,55,2.0,12,25,450
+Sound,70,2.0,12,25,450
+Art,50,2.0,12,25,450
+AD/Production,45,2.0,12,25,450
+Cast,120,2.0,12,25,450
+*,60,1.5,10,25,450
+*,60,2.0,12,25,450

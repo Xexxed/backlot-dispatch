@@ -59,6 +59,12 @@ def create_app(
         travel = travel_times or {}
     rbc = rulebook_ctx or RuleBookContext(load_rulebook(), travel)
     store = store or Store(settings.db_path)
+    # Cost ledger: enabled only when seed/rates.csv exists (feature off
+    # otherwise — every page renders exactly as before). Malformed files
+    # raise loudly here, per the importers' fail-loud contract.
+    from app.importers import load_rates
+
+    rates = load_rates(settings.seed_dir)
 
     app = FastAPI(title="Backlot Dispatch", version="0.3.0")
 
@@ -77,6 +83,7 @@ def create_app(
     app.state.production = production
     app.state.rbc = rbc
     app.state.store = store
+    app.state.rates = rates
     # Crew-link epoch/issue time persist in SQLite, so restarts do not extend
     # expiry. Note: on Replit's ephemeral filesystem a redeploy starts a fresh
     # DB (epoch 0), which restores the original link set — redistribution of
