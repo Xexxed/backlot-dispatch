@@ -85,6 +85,12 @@ CREATE TABLE IF NOT EXISTS responses (
     critical INTEGER NOT NULL DEFAULT 0,
     handled INTEGER NOT NULL DEFAULT 0
 );
+CREATE TABLE IF NOT EXISTS sentinel_state (
+    signal_id TEXT NOT NULL,
+    day_key TEXT NOT NULL,
+    raised_at TEXT NOT NULL,
+    PRIMARY KEY (signal_id, day_key)
+);
 """
 
 
@@ -433,5 +439,25 @@ class Store:
         with self._lock:
             self._conn.execute(
                 "UPDATE responses SET handled = 1 WHERE id = ?", (response_id,)
+            )
+            self._conn.commit()
+
+    # ------------------------------------------------------ sentinel state
+    def signal_already_raised(self, signal_id: str, day_key: str) -> bool:
+        """Idempotency gate: a sentinel signal raises at most one incident
+        per (signal, day) pair — two ticks with unchanged state raise zero."""
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT 1 FROM sentinel_state WHERE signal_id = ? AND day_key = ?",
+                (signal_id, day_key),
+            ).fetchone()
+        return row is not None
+
+    def record_signal_raised(self, signal_id: str, day_key: str) -> None:
+        with self._lock:
+            self._conn.execute(
+                "INSERT OR IGNORE INTO sentinel_state (signal_id, day_key, raised_at) "
+                "VALUES (?,?,?)",
+                (signal_id, day_key, utc_now_iso()),
             )
             self._conn.commit()
