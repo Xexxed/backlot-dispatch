@@ -132,6 +132,31 @@
 </div>
 {% endif %}
 
+{% if sentinel_last %}
+<section class="panel weather-panel">
+  <div class="section-heading">
+    <h2>Sentinel <span class="muted small">agent-raised signals · mode: {{ sentinel_last.mode }}</span></h2>
+  </div>
+  {% for s in sentinel_last.raised %}
+  <div class="banner {{ 'warn' if s.severity in ('high', 'medium') else '' }}">
+    <div>
+      <strong>⚠ {{ s.title }}</strong> <span class="chip {{ 'err' if s.severity == 'high' else 'warn' }}">{{ s.severity }}</span>
+      <span class="muted small">{{ s.metric }}</span><br>
+      <span class="small">{{ s.detail }}</span>
+      {% if s.target %}
+      <br><a class="small" href="{{ s.target }}">Review the recovery plan →</a>
+      {% endif %}
+      {% if s.auto_published %}
+      <br><span class="chip ok">auto-published {{ s.auto_published.plan_id }} (within governance ceilings)</span>
+      {% endif %}
+    </div>
+  </div>
+  {% else %}
+  <p class="muted small">No signals at the last check.</p>
+  {% endfor %}
+</section>
+{% endif %}
+
 {% if exceptions %}
 <div class="section-heading"><h2>Exceptions queue <span class="muted small">(unhandled crew replies)</span></h2></div>
 <div class="panel">

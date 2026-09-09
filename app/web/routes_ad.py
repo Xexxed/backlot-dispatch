@@ -151,6 +151,7 @@ def dashboard(request: Request, msg: str = ""):
 
     weather_ctx = _weather_context(st, published, base_ctx)
     exceptions = _exceptions_context(st)
+    sentinel_ctx = _sentinel_view_context(st, published, base_ctx, acked_ids)
 
     return st.templates.TemplateResponse(
         request,
@@ -171,6 +172,7 @@ def dashboard(request: Request, msg: str = ""):
             "links_expired": links_expired,
             "weather": weather_ctx,
             "exceptions": exceptions,
+            "sentinel_last": sentinel_ctx,
             "msg": msg,
         },
     )
@@ -985,6 +987,44 @@ def department_view(request: Request, dept_name: str):
 
 
 # ------------------------------------------------------- Exceptions queue
+def _sentinel_view_context(st, published, base_ctx, acked_ids):
+    """Read-only sentinel preview for the dashboard card: evaluate signals on
+    render (never files incidents — POST /sentinel/tick does that)."""
+    if getattr(st.settings, "governance_mode", "advise") == "off":
+        return None
+    try:
+        from app.sentinel import evaluate
+        from app.web.sentinel_page import _sentinel_forecasts
+
+        now_minutes = _now_minutes(None, st.settings)
+        signals = evaluate(
+            st.production,
+            st.rbc,
+            published,
+            now_minutes,
+            st.settings,
+            acked_ids=acked_ids,
+            forecasts=_sentinel_forecasts(st),
+            replies=st.store.unhandled_responses(limit=20),
+        )
+        return {
+            "mode": getattr(st.settings, "governance_mode", "advise"),
+            "raised": [
+                {
+                    "title": s.title,
+                    "severity": s.severity,
+                    "detail": s.detail,
+                    "metric": s.metric,
+                    "target": None,
+                    "auto_published": None,
+                }
+                for s in signals
+            ],
+        }
+    except Exception:  # noqa: BLE001 - advisory must never break the dashboard
+        return None
+
+
 def _exceptions_context(st) -> list[dict]:
     """Unhandled crew replies for the dashboard queue (critical-first)."""
     out = []

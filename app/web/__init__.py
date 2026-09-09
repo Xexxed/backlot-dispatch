@@ -100,6 +100,7 @@ def create_app(
     from app.web.debug import router as debug_router
     from app.web.routes_ad import router as ad_router
     from app.web.routes_crew import router as crew_router
+    from app.web.sentinel_page import router as sentinel_router
 
     # AD console + debug evidence sit behind HTTP Basic auth. Crew portal
     # routes stay bearer-token only — the personal link is the credential.
@@ -107,4 +108,5 @@ def create_app(
     app.include_router(crew_router)
     app.include_router(debug_router, dependencies=[Depends(require_ad)])
     app.include_router(agents_router, dependencies=[Depends(require_ad)])
+    app.include_router(sentinel_router, dependencies=[Depends(require_ad)])
     return app

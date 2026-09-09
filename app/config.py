@@ -165,6 +165,21 @@ class Settings:
         self.replit_domains = [
             d.strip().strip(".") for d in _env("REPLIT_DOMAINS").split(",") if d.strip()
         ]
+        # Sentinel governance dial: 'advise' (default) files incidents and
+        # ALWAYS waits for the human gate; 'auto_low' lets the agent publish
+        # only below BOTH ceilings (0 = unreachable = never auto-publish);
+        # 'off' disables sentinel evaluation entirely. Invalid values fall
+        # back to the safe default — a bad secret must never widen autonomy.
+        mode = _env("GOVERNANCE_MODE", "advise").lower()
+        self.governance_mode = mode if mode in ("advise", "auto_low", "off") else "advise"
+        try:
+            self.auto_publish_max_usd = float(_env("AUTO_PUBLISH_MAX_USD", "0"))
+            self.auto_publish_max_minutes_moved = int(
+                _env("AUTO_PUBLISH_MAX_MINUTES_MOVED", "0")
+            )
+        except ValueError:
+            self.auto_publish_max_usd = 0.0
+            self.auto_publish_max_minutes_moved = 0
 
     @property
     def running_on_replit(self) -> bool:
