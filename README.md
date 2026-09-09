@@ -49,6 +49,14 @@ agent gracefully falls back to the manual form; every other feature works.
   machine-checkable `rule_id` (`R-BLOCKED-LOCATION`, `R-DAYLIGHT`,
   `R-MEAL-WINDOW`, `R-DEPS`, `R-MEAL-BREAK`, `R-TRAVEL`). Infeasible days
   produce explicit diagnostics — never a silent bad schedule.
+- **Cost & compliance ledger**: every recovery option carries a dollar
+  exposure — department-hour spans against `seed/rates.csv` (demo rates:
+  $45–120/h by department, ×1.5 OT after 10h, ×2.0 after 12h), $25/person
+  per half-hour of penalty meals, $450 per company move. Sandbox cards, plan
+  diff and the dashboard banner all read the same pure `price_plan` funnel.
+  Demo scenario (Generator down at Stage 4): Minimal-change $4,457 vs Hold
+  & wait $5,357 — **$900 exposure avoided** on one incident, plus the
+  recovery-timer speedup.
 - **Agent Control Room** (`/agents`): every pipeline run recorded as an
   ordered step trace (intake → replan → narrate → human gate → deploy) with
   per-step agent, kind (`llm | deterministic | human`), duration and verdict;
@@ -89,15 +97,20 @@ agent gracefully falls back to the manual form; every other feature works.
    unit blocked until 14:00” — or type it instead.
 3. Intake agent returns the transcript + structured incident JSON (see
    `/debug/gcp`); the review page shows exactly what the model heard.
-4. Diff view: scenes pushed behind unblocked work, lunch re-timed, dependency
+4. Sandbox: three recovery options, each with a **dollar exposure** —
+   Minimal change $4,457 vs Hold & wait $5,357 (the critic recommends the
+   cheap feasible one; it cannot decide).
+5. Diff view: scenes pushed behind unblocked work, lunch re-timed, dependency
    order preserved — each row citing its rule.
-5. **Publish** → per-person links + QR codes regenerate instantly.
-6. Open a crew link on a phone: new call time, what-changed-and-why, ack tap
+6. **Publish** → per-person links + QR codes regenerate instantly; the
+   dashboard banner now reads "Option exposure: $4,457 … vs Hold & wait:
+   $5,357 … Avoided $900 of exposure".
+7. Open a crew link on a phone: new call time, what-changed-and-why, ack tap
    lands back on the AD dashboard.
-7. Weather beat: the "Weather watch" card flags the fixture storm at Harper
+8. Weather beat: the "Weather watch" card flags the fixture storm at Harper
    Ranch (14:00–16:30) threatening `SC-121`/`SC-125` → "Generate weather
    pivot plan" runs the identical sandbox flow for a `WEATHER` incident.
-8. Control Room: `/agents` shows the run trace filling in step by step —
+9. Control Room: `/agents` shows the run trace filling in step by step —
    the LLM only ever emits typed intents; the deterministic engine is the
    only thing that can move a scene; the human gate decides.
 
@@ -144,7 +157,7 @@ deployed keep working until the first explicit rotation.
 ## Tests
 
 ```powershell
-.venv\Scripts\python.exe -m pytest tests -q     # 239 tests: invariants, E2E, contracts
+.venv\Scripts\python.exe -m pytest tests -q     # 256 tests: invariants, E2E, contracts
 ```
 
 Key invariant: a proposal is feasible **iff** the independent validator finds
