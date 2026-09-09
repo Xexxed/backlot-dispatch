@@ -96,6 +96,7 @@ def create_app(
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
     from app.web.auth import require_ad
+    from app.web.agents_page import router as agents_router
     from app.web.debug import router as debug_router
     from app.web.routes_ad import router as ad_router
     from app.web.routes_crew import router as crew_router
@@ -105,4 +106,5 @@ def create_app(
     app.include_router(ad_router, dependencies=[Depends(require_ad)])
     app.include_router(crew_router)
     app.include_router(debug_router, dependencies=[Depends(require_ad)])
+    app.include_router(agents_router, dependencies=[Depends(require_ad)])
     return app

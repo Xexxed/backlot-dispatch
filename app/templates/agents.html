@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}Agent Control Room — Backlot Dispatch{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <p class="eyebrow">Agent control room / live trace</p>
+    <h1>Agent runs <span class="heading-meta">LLM proposes · engine decides · human approves</span></h1>
+    <p class="page-intro">Every pipeline run, step by step. Raw API-call evidence lives on the <a href="/debug/gcp">GCP log</a>; this page is the story.</p>
+  </div>
+  <span class="chip {{ 'ok' if runs else 'info' }}">{{ runs | length }} run{{ 's' if runs | length != 1 else '' }}</span>
+</div>
+
+{% for r in runs %}
+<section class="panel">
+  <div class="panel-heading">
+    <h3>Run {{ r.id }} <span class="muted small">· {{ r.trigger }}</span></h3>
+    <span class="chip {{ 'ok' if r.status in ('ok', 'published') else ('warn' if r.status in ('fallback', 'awaiting_human') else 'err') }}">{{ r.status }}</span>
+  </div>
+  <p class="muted small">started {{ r.started_at }} · total {{ r.duration_display }}</p>
+  {% if r.steps %}
+  <table class="responsive">
+    <tr><th scope="col">#</th><th scope="col">Step</th><th scope="col">Agent</th><th scope="col">Kind</th><th scope="col">Duration</th><th scope="col">Status</th><th scope="col">Verdict / summary</th></tr>
+    {% for s in r.steps %}
+    <tr>
+      <td data-label="#"> {{ s.seq }}</td>
+      <td data-label="Step"><strong>{{ s.name }}</strong>{% if s.model %} <span class="muted small">{{ s.model }}</span>{% endif %}</td>
+      <td data-label="Agent">{{ s.agent }}</td>
+      <td data-label="Kind"><span class="chip {{ 'ok' if s.kind == 'deterministic' else ('info' if s.kind == 'llm' else '') }}">{{ s.kind }}</span></td>
+      <td data-label="Duration">{{ s.duration_display }}</td>
+      <td data-label="Status"><span class="chip {{ 'ok' if s.status == 'ok' else ('warn' if s.status == 'fallback' else 'err') }}">{{ s.status }}</span></td>
+      <td data-label="Verdict">{{ s.verdict }}{% if s.summary %} <span class="muted small">— {{ s.summary }}</span>{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <p class="muted small">No steps recorded — the run was interrupted.</p>
+  {% endif %}
+</section>
+{% else %}
+<p class="muted">No agent runs yet — file an incident from the <a href="/">dashboard</a> to see the pipeline trace.</p>
+{% endfor %}
+{% endblock %}

@@ -49,6 +49,29 @@ CREATE TABLE IF NOT EXISTS token_meta (
     epoch INTEGER NOT NULL,
     issued_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS agent_runs (
+    id TEXT PRIMARY KEY,
+    started_at TEXT NOT NULL,
+    trigger TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'running',
+    duration_ms INTEGER,
+    summary_json TEXT NOT NULL DEFAULT '{}'
+);
+CREATE TABLE IF NOT EXISTS agent_steps (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id TEXT NOT NULL,
+    seq INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    agent TEXT NOT NULL DEFAULT '',
+    kind TEXT NOT NULL DEFAULT 'deterministic',
+    model TEXT NOT NULL DEFAULT '',
+    started_ms INTEGER NOT NULL DEFAULT 0,
+    duration_ms INTEGER,
+    status TEXT NOT NULL DEFAULT 'ok',
+    verdict TEXT NOT NULL DEFAULT '',
+    summary TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_agent_steps_run ON agent_steps (run_id, seq);
 """
 
 
@@ -257,3 +280,88 @@ class Store:
                 "SELECT * FROM gcp_calls ORDER BY id DESC LIMIT ?", (limit,)
             ).fetchall()
         return [dict(r) for r in rows]
+
+    # -------------------------------------------------------- agent trace
+    def start_run(self, run_id: str, trigger: str) -> None:
+        """Open a trace run. Any still-'running' row is a crashed request —
+        mark it failed so at most one orphan can ever exist per crash."""
+        with self._lock:
+            self._conn.execute(
+                "UPDATE agent_runs SET status = 'failed' WHERE status = 'running' "
+                "AND id != ?",
+                (run_id,),
+            )
+            self._conn.execute(
+                "INSERT OR IGNORE INTO agent_runs (id, started_at, trigger, status) "
+                "VALUES (?,?,?,'running')",
+                (run_id, utc_now_iso(), trigger),
+            )
+            self._conn.commit()
+
+    def add_step(
+        self,
+        run_id: str,
+        seq: int,
+        name: str,
+        agent: str = "",
+        kind: str = "deterministic",
+        model: str = "",
+        started_ms: int = 0,
+        duration_ms: int | None = None,
+        status: str = "ok",
+        verdict: str = "",
+        summary: str = "",
+    ) -> None:
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO agent_steps (run_id, seq, name, agent, kind, model, "
+                "started_ms, duration_ms, status, verdict, summary) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                (
+                    run_id,
+                    seq,
+                    name,
+                    agent,
+                    kind,
+                    model,
+                    started_ms,
+                    duration_ms,
+                    status,
+                    verdict[:200],
+                    summary[:500],
+                ),
+            )
+            self._conn.commit()
+
+    def finish_run(
+        self, run_id: str, status: str, duration_ms: int, summary: dict | None = None
+    ) -> None:
+        with self._lock:
+            self._conn.execute(
+                "UPDATE agent_runs SET status = ?, duration_ms = ?, summary_json = ? "
+                "WHERE id = ?",
+                (status, duration_ms, json.dumps(summary or {}), run_id),
+            )
+            self._conn.commit()
+
+    def steps_for_run(self, run_id: str) -> list[dict]:
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM agent_steps WHERE run_id = ? ORDER BY seq ASC",
+                (run_id,),
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def recent_runs(self, limit: int = 20) -> list[dict]:
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM agent_runs ORDER BY started_at DESC LIMIT ?", (limit,)
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def get_run(self, run_id: str) -> dict | None:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT * FROM agent_runs WHERE id = ?", (run_id,)
+            ).fetchone()
+        return dict(row) if row else None

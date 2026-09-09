@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import time
 import uuid
+from contextlib import nullcontext
 from datetime import datetime, timezone
 from typing import Annotated
 
@@ -27,6 +28,7 @@ from app.tokens import (
     subject_token,
     sync_token_state,
 )
+from app.trace import RunRecorder
 from app.weather import (
     build_reports,
     fetch_live,
@@ -245,6 +247,8 @@ async def create_incident(
     t0 = time.perf_counter()
     st = request.app.state
     settings, production, store = st.settings, st.production, st.store
+    now_minutes = _now_minutes(now_override or None, settings)
+    completed_ids = [c for c in (completed or []) if c]
 
     if force_manual == "1":
         blocked_until_min = _parse_hhmm_or_none(manual_blocked_until)
@@ -272,20 +276,35 @@ async def create_incident(
                     ),
                 },
             )
-        incident = Incident(
-            type=manual_type or "OTHER",
-            location_id=manual_location or None,
-            blocked_until=manual_blocked_until or None,
-            blocked_from=manual_blocked_from or None,
-            severity=manual_severity or "medium",
-            free_text=free_text or "(manual form)",
-            confidence=1.0,
-            source="manual_form",
+        recorder = RunRecorder(st.store, "manual").start()
+        with recorder.step("intake", agent="manual-form", kind="human") as stp:
+            incident = Incident(
+                type=manual_type or "OTHER",
+                location_id=manual_location or None,
+                blocked_until=manual_blocked_until or None,
+                blocked_from=manual_blocked_from or None,
+                severity=manual_severity or "medium",
+                free_text=free_text or "(manual form)",
+                confidence=1.0,
+                source="manual_form",
+            )
+            stp.verdict = f"{incident.type} / {incident.severity}"
+            stp.summary = (incident.free_text or "")[:200]
+        return _incident_pipeline_response(
+            st, incident, completed_ids, now_minutes, t0, recorder
         )
-    else:
+
+    recorder = RunRecorder(st.store, "text").start()
+    with recorder.step(
+        "intake", agent="intake", kind="llm", model=settings.gemini_model
+    ) as stp:
         try:
             incident = parse_incident(free_text, settings, production.locations, store)
         except FallbackRequired as fr:
+            stp.status = "fallback"
+            stp.verdict = "manual form takes over"
+            stp.summary = fr.reason[:300]
+            recorder.finish("fallback", {"reason": fr.reason})
             return st.templates.TemplateResponse(
                 request,
                 "incident_form.html",
@@ -295,15 +314,20 @@ async def create_incident(
                     "fallback_reason": fr.reason,
                 },
             )
-
-    now_minutes = _now_minutes(now_override or None, settings)
+        stp.verdict = f"{incident.type} / {incident.severity}"
+        stp.summary = (incident.free_text or "")[:200]
     return _incident_pipeline_response(
-        st, incident, [c for c in (completed or []) if c], now_minutes, t0
+        st, incident, completed_ids, now_minutes, t0, recorder
     )
 
 
 def _incident_pipeline_response(
-    st, incident: Incident, completed_ids: list[str], now_minutes: int, t0: float
+    st,
+    incident: Incident,
+    completed_ids: list[str],
+    now_minutes: int,
+    t0: float,
+    recorder: RunRecorder | None = None,
 ) -> RedirectResponse:
     """Post-intake flow shared by the text route and the voice route.
 
@@ -314,29 +338,56 @@ def _incident_pipeline_response(
     """
     if not (incident.location_id and incident.blocked_until_minutes() is not None):
         plan_id = uuid.uuid4().hex[:12]
-        proposal = replan(
-            st.production,
-            st.rbc,
-            completed_scene_ids=completed_ids,
-            incident=incident,
-            now_minutes=now_minutes,
-            plan_id=plan_id,
-            created_at=utc_now_iso(),
-        )
-        summary_text, narration_source = narrate(
-            proposal.changes, proposal.diagnostics, st.settings, st.store
-        )
+        with _step(recorder, "replan", agent="engine") as stp:
+            proposal = replan(
+                st.production,
+                st.rbc,
+                completed_scene_ids=completed_ids,
+                incident=incident,
+                now_minutes=now_minutes,
+                plan_id=plan_id,
+                created_at=utc_now_iso(),
+            )
+            stp.verdict = (
+                f"feasible={proposal.is_feasible} · {len(proposal.changes)} changes"
+            )
+        with _step(recorder, "narrate", agent="narrator", kind="llm",
+                   model=st.settings.gemini_model) as stp:
+            summary_text, narration_source = narrate(
+                proposal.changes, proposal.diagnostics, st.settings, st.store
+            )
+            stp.verdict = f"source={narration_source}"
         payload = proposal_to_dict(proposal)
         payload["narration"] = {"text": summary_text, "source": narration_source}
         payload["now_minutes"] = now_minutes
         payload["recovery_seconds"] = max(round(time.perf_counter() - t0, 2), 0.05)
         st.store.save_plan(payload)
+        if recorder is not None:
+            recorder.finish(
+                "awaiting_human",
+                {"target": f"/plans/{plan_id}", "feasible": proposal.is_feasible},
+            )
         return RedirectResponse(f"/plans/{plan_id}", status_code=303)
 
     group_id = _sandbox_group_for_blocking_incident(
-        st, incident, completed_ids, now_minutes, t0
+        st, incident, completed_ids, now_minutes, t0, recorder
     )
+    if recorder is not None:
+        recorder.finish("awaiting_human", {"target": f"/sandbox/{group_id}"})
     return RedirectResponse(f"/sandbox/{group_id}", status_code=303)
+
+
+def _step(recorder: RunRecorder | None, name: str, agent: str = "", **kwargs):
+    """Recorder step when tracing; a no-op null context when not."""
+    if recorder is None:
+        return nullcontext(_NullStep())
+    return recorder.step(name, agent=agent, **kwargs)
+
+
+class _NullStep:
+    verdict = ""
+    summary = ""
+    status = "ok"
 
 
 # ~5 minutes of 16 kHz 16-bit mono WAV; the client widget caps recording at
@@ -405,16 +456,26 @@ async def create_incident_voice(
             error="Unsupported audio format — voice notes are captured as WAV."
         )
 
-    try:
-        # The Gemini call is a blocking multi-second round trip on multi-MB
-        # audio; the deterministic replan/narrate pipeline follows it. Both
-        # run off the event loop so a voice upload cannot stall the single
-        # uvicorn worker for every other request.
-        incident = await run_in_threadpool(
-            parse_incident_voice, data, settings, production.locations, store
-        )
-    except FallbackRequired as fr:
-        return _rerender(fallback_reason=fr.reason)
+    # The Gemini call is a blocking multi-second round trip on multi-MB
+    # audio; the deterministic replan/narrate pipeline follows it. Both
+    # run off the event loop so a voice upload cannot stall the single
+    # uvicorn worker for every other request.
+    recorder = RunRecorder(st.store, "voice").start()
+    with recorder.step(
+        "intake", agent="intake", kind="llm", model=settings.gemini_model
+    ) as stp:
+        try:
+            incident = await run_in_threadpool(
+                parse_incident_voice, data, settings, production.locations, store
+            )
+        except FallbackRequired as fr:
+            stp.status = "fallback"
+            stp.verdict = "manual form takes over"
+            stp.summary = fr.reason[:300]
+            recorder.finish("fallback", {"reason": fr.reason})
+            return _rerender(fallback_reason=fr.reason)
+        stp.verdict = f"{incident.type} / {incident.severity}"
+        stp.summary = f"transcript_chars={len(incident.free_text or '')}"
 
     now_minutes = _now_minutes(now_override or None, settings)
     return await run_in_threadpool(
@@ -424,29 +485,37 @@ async def create_incident_voice(
         [c for c in (completed or []) if c],
         now_minutes,
         t0,
+        recorder,
     )
 
 
 def _sandbox_group_for_blocking_incident(
-    st, incident: Incident, completed_ids: list[str], now_minutes: int, t0: float
+    st,
+    incident: Incident,
+    completed_ids: list[str],
+    now_minutes: int,
+    t0: float,
+    recorder: RunRecorder | None = None,
 ) -> str:
     """Run every recovery strategy for a blocking incident and persist the
-    resulting sandbox group. Shared by /incident and /weather/adopt so both
-    paths produce identical option sets. Returns the group id."""
+    resulting sandbox group. Shared by /incident, /weather/adopt and the
+    sentinel so all paths produce identical option sets. Returns the group id."""
     group_id = uuid.uuid4().hex[:12]
     for strategy_id in STRATEGIES:
         option_id = uuid.uuid4().hex[:12]
-        proposal = replan(
-            st.production,
-            st.rbc,
-            completed_scene_ids=completed_ids,
-            incident=incident,
-            now_minutes=now_minutes,
-            plan_id=option_id,
-            created_at=utc_now_iso(),
-            strategy=strategy_id,
-            group_id=group_id,
-        )
+        with _step(recorder, "options", agent="engine", kind="deterministic") as stp:
+            proposal = replan(
+                st.production,
+                st.rbc,
+                completed_scene_ids=completed_ids,
+                incident=incident,
+                now_minutes=now_minutes,
+                plan_id=option_id,
+                created_at=utc_now_iso(),
+                strategy=strategy_id,
+                group_id=group_id,
+            )
+            stp.verdict = f"strategy={strategy_id} feasible={proposal.is_feasible}"
         payload = proposal_to_dict(proposal)
         payload["now_minutes"] = now_minutes
         st.store.save_plan(payload)
@@ -537,9 +606,11 @@ async def weather_adopt(
     now_minutes = _now_minutes(None, st.settings)
     published = st.store.latest_published_plan()
     completed_ids = list(published.get("completed_scene_ids") or []) if published else []
+    recorder = RunRecorder(st.store, "weather_adopt").start()
     group_id = _sandbox_group_for_blocking_incident(
-        st, incident, completed_ids, now_minutes, t0
+        st, incident, completed_ids, now_minutes, t0, recorder
     )
+    recorder.finish("awaiting_human", {"target": f"/sandbox/{group_id}"})
     return RedirectResponse(f"/sandbox/{group_id}", status_code=303)
 
 
@@ -587,52 +658,77 @@ async def create_edit(
 ):
     st = request.app.state
     settings, production, store = st.settings, st.production, st.store
+    recorder = RunRecorder(store, "edit").start()
 
     try:
         if force_manual == "1":
             if manual_action not in EDIT_ACTIONS:
+                recorder.finish("failed", {"error": "invalid edit action"})
                 return _edit_response(
                     request, st, free_text=free_text,
                     error="Pick an edit action (move, relocate, or add).",
                 )
-            edits = [
-                manual_edit_intent(
-                    action=manual_action,
-                    scene_id=manual_scene,
-                    ref_scene_id=manual_ref_scene,
-                    new_location_id=manual_location,
-                    title=manual_title,
-                    page_count=manual_pages,
-                    location_id=manual_location,
-                    int_ext=manual_int_ext,
-                    day_night=manual_day_night,
-                )
-            ]
+            with recorder.step("intake", agent="manual-form", kind="human") as stp:
+                edits = [
+                    manual_edit_intent(
+                        action=manual_action,
+                        scene_id=manual_scene,
+                        ref_scene_id=manual_ref_scene,
+                        new_location_id=manual_location,
+                        title=manual_title,
+                        page_count=manual_pages,
+                        location_id=manual_location,
+                        int_ext=manual_int_ext,
+                        day_night=manual_day_night,
+                    )
+                ]
+                stp.verdict = manual_action
         else:
-            edits = parse_edit_intents(free_text, settings, production, store)
+            with recorder.step(
+                "intake", agent="editor", kind="llm", model=settings.gemini_model
+            ) as stp:
+                try:
+                    edits = parse_edit_intents(free_text, settings, production, store)
+                except EditFallback as fr:
+                    stp.status = "fallback"
+                    stp.verdict = "manual form takes over"
+                    stp.summary = fr.reason[:300]
+                    recorder.finish("fallback", {"reason": fr.reason})
+                    return _edit_response(
+                        request, st, free_text=free_text, fallback_reason=fr.reason
+                    )
+                stp.verdict = f"{len(edits)} intent(s)"
 
         now_minutes = _now_minutes(now_override or None, settings)
-        proposal = apply_edits(
-            production,
-            st.rbc,
-            completed_scene_ids=[c for c in (completed or []) if c],
-            edits=edits,
-            now_minutes=now_minutes,
-            plan_id=uuid.uuid4().hex[:12],
-            created_at=utc_now_iso(),
-        )
-    except EditFallback as fr:
-        return _edit_response(request, st, free_text=free_text, fallback_reason=fr.reason)
+        with recorder.step("replan", agent="engine") as stp:
+            proposal = apply_edits(
+                production,
+                st.rbc,
+                completed_scene_ids=[c for c in (completed or []) if c],
+                edits=edits,
+                now_minutes=now_minutes,
+                plan_id=uuid.uuid4().hex[:12],
+                created_at=utc_now_iso(),
+            )
+            stp.verdict = (
+                f"feasible={proposal.is_feasible} · {len(proposal.changes)} changes"
+            )
     except EditError as ee:
+        recorder.finish("failed", {"error": str(ee)[:300]})
         return _edit_response(request, st, free_text=free_text, error=str(ee))
 
-    summary_text, narration_source = narrate(
-        proposal.changes, proposal.diagnostics, settings, store
-    )
+    with recorder.step(
+        "narrate", agent="narrator", kind="llm", model=settings.gemini_model
+    ) as stp:
+        summary_text, narration_source = narrate(
+            proposal.changes, proposal.diagnostics, settings, store
+        )
+        stp.verdict = f"source={narration_source}"
     payload = proposal_to_dict(proposal)
     payload["narration"] = {"text": summary_text, "source": narration_source}
     payload["now_minutes"] = now_minutes
     store.save_plan(payload)
+    recorder.finish("awaiting_human", {"target": f"/plans/{proposal.id}"})
     return RedirectResponse(f"/plans/{proposal.id}", status_code=303)
 
 
@@ -725,29 +821,43 @@ async def publish_plan(request: Request, plan_id: str, acknowledge: str = ""):
     if plan is None:
         return PlainTextResponse("Unknown plan.", status_code=404)
 
+    recorder = RunRecorder(st.store, "publish").start()
     status = "published_override" if acknowledge == "1" else "published"
     # Narrate on publish if the option was published directly without selection.
     if not plan.get("narration"):
-        summary_text, narration_source = narrate_plan(plan, st.settings, st.store)
-        plan["narration"] = {"text": summary_text, "source": narration_source}
-        st.store.save_plan(plan)
+        with _step(
+            recorder, "narrate", agent="narrator", kind="llm",
+            model=st.settings.gemini_model,
+        ) as stp:
+            summary_text, narration_source = narrate_plan(plan, st.settings, st.store)
+            plan["narration"] = {"text": summary_text, "source": narration_source}
+            stp.verdict = f"source={narration_source}"
+            st.store.save_plan(plan)
 
-    group_id = plan.get("group_id") or ""
-    if group_id:
-        for other in st.store.plans_in_group(group_id):
-            if other["id"] != plan_id and other["status"] == "proposed":
-                st.store.set_plan_status(other["id"], "alternative")
+    with _step(recorder, "approve", agent="1st-ad", kind="human") as stp:
+        stp.verdict = "override — violations acknowledged" if status == "published_override" else "approved"
+        group_id = plan.get("group_id") or ""
+        if group_id:
+            for other in st.store.plans_in_group(group_id):
+                if other["id"] != plan_id and other["status"] == "proposed":
+                    st.store.set_plan_status(other["id"], "alternative")
 
-    # Versioning: the previously live plan is kept (superseded) as the
-    # one-click rollback target — agents propose, humans can undo.
-    current = st.store.latest_published_plan()
-    if current and current["id"] != plan_id:
-        st.store.set_plan_status(current["id"], "superseded")
+        # Versioning: the previously live plan is kept (superseded) as the
+        # one-click rollback target — agents propose, humans can undo.
+        current = st.store.latest_published_plan()
+        if current and current["id"] != plan_id:
+            st.store.set_plan_status(current["id"], "superseded")
 
-    st.store.set_plan_status(plan_id, status)
+        st.store.set_plan_status(plan_id, status)
 
     # Regenerate per-person links + QR codes into /static/qr/.
-    _regenerate_qr_artifacts(request)
+    with _step(recorder, "deploy", agent="portal", kind="deterministic") as stp:
+        _regenerate_qr_artifacts(request)
+        stp.verdict = f"{len(st.token_index)} links + QR regenerated"
+    recorder.finish(
+        "published",
+        {"plan_id": plan_id, "override": status == "published_override"},
+    )
     note = "" if status == "published" else "+with+acknowledged+violations"
     return RedirectResponse(f"/?msg=Plan+{plan_id}+published{note}", status_code=303)
 
@@ -767,13 +877,19 @@ async def revert_plan(request: Request, plan_id: str):
             f"/?msg=Plan+{plan_id}+is+already+the+live+plan", status_code=303
         )
 
-    current = st.store.latest_published_plan()
-    if current and current["id"] != plan_id:
-        st.store.set_plan_status(current["id"], "superseded")
-    st.store.set_plan_status(plan_id, "published")
+    recorder = RunRecorder(st.store, "revert").start()
+    with _step(recorder, "approve", agent="1st-ad", kind="human") as stp:
+        stp.verdict = f"reverted to {plan_id}"
+        current = st.store.latest_published_plan()
+        if current and current["id"] != plan_id:
+            st.store.set_plan_status(current["id"], "superseded")
+        st.store.set_plan_status(plan_id, "published")
 
     sync_token_state(st)
-    _regenerate_qr_artifacts(request)
+    with _step(recorder, "deploy", agent="portal", kind="deterministic") as stp:
+        _regenerate_qr_artifacts(request)
+        stp.verdict = f"{len(st.token_index)} links + QR regenerated"
+    recorder.finish("published", {"plan_id": plan_id, "reverted": True})
     return RedirectResponse(
         f"/?msg=Reverted+to+plan+{plan_id}+-+crew+links+live+again", status_code=303
     )
