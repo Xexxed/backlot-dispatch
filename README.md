@@ -49,6 +49,20 @@ agent gracefully falls back to the manual form; every other feature works.
   machine-checkable `rule_id` (`R-BLOCKED-LOCATION`, `R-DAYLIGHT`,
   `R-MEAL-WINDOW`, `R-DEPS`, `R-MEAL-BREAK`, `R-TRAVEL`). Infeasible days
   produce explicit diagnostics — never a silent bad schedule.
+- **Agent Control Room** (`/agents`): every pipeline run recorded as an
+  ordered step trace (intake → replan → narrate → human gate → deploy) with
+  per-step agent, kind (`llm | deterministic | human`), duration and verdict;
+  a critic agent recommends one sandbox option but can never mutate anything.
+- **Sentinel**: an agent that watches the day and files its own incidents —
+  daylight burn-down, meal-penalty clock, unacknowledged critical crew,
+  imminent weather, crew-reported slippage — through the standard sandbox →
+  review → publish pipeline. Governance dial (`GOVERNANCE_MODE`): `advise`
+  (default) always waits for the human gate; `auto_low` auto-publishes only
+  under explicit ceilings; `off` disables. Autonomy with a documented leash.
+- **Crew replies**: crew members answer from their personal link by voice or
+  text ("I'm 30 minutes out"); the reply becomes a structured time fact in
+  the AD's Exceptions queue — never a stored narrative (and raw audio is
+  never persisted).
 - **Weather-aware suggestions**: committed forecast fixtures (offline demo)
   plus an optional manual live refresh from the Google Weather API (Maps
   Platform). Hazard windows (precip ≥ `WEATHER_PRECIP_PCT`%, thunderstorm,
@@ -83,6 +97,9 @@ agent gracefully falls back to the manual form; every other feature works.
 7. Weather beat: the "Weather watch" card flags the fixture storm at Harper
    Ranch (14:00–16:30) threatening `SC-121`/`SC-125` → "Generate weather
    pivot plan" runs the identical sandbox flow for a `WEATHER` incident.
+8. Control Room: `/agents` shows the run trace filling in step by step —
+   the LLM only ever emits typed intents; the deterministic engine is the
+   only thing that can move a scene; the human gate decides.
 
 **Phone note:** mic capture (`getUserMedia`) only works on HTTPS or
 `localhost` — on a phone, use the deployed `*.replit.app` URL; over plain
@@ -127,7 +144,7 @@ deployed keep working until the first explicit rotation.
 ## Tests
 
 ```powershell
-.venv\Scripts\python.exe -m pytest tests -q     # 190 tests: invariants, E2E, contracts
+.venv\Scripts\python.exe -m pytest tests -q     # 239 tests: invariants, E2E, contracts
 ```
 
 Key invariant: a proposal is feasible **iff** the independent validator finds

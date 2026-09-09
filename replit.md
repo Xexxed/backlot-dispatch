@@ -31,6 +31,10 @@ following configured values:
 - `GOOGLE_SERVICE_ACCOUNT_JSON`
 - `NOW_OVERRIDE` (optional HH:MM — pins the AD console's "now" so recorded
   demos stay timezone-stable; Replit servers run UTC)
+- `GOVERNANCE_MODE` (optional `advise` | `auto_low` | `off` — sentinel
+  autonomy dial; default `advise` never auto-publishes)
+- `AUTO_PUBLISH_MAX_USD` / `AUTO_PUBLISH_MAX_MINUTES_MOVED` (optional
+  auto-publish ceilings under `auto_low`; 0 = unreachable)
 - `PUBLIC_BASE_URL`
 - `TRUSTED_HOSTS`
 

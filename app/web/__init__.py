@@ -60,7 +60,7 @@ def create_app(
     rbc = rulebook_ctx or RuleBookContext(load_rulebook(), travel)
     store = store or Store(settings.db_path)
 
-    app = FastAPI(title="Backlot Dispatch", version="0.1.0")
+    app = FastAPI(title="Backlot Dispatch", version="0.3.0")
 
     # Middleware run order: the LAST added runs FIRST. TrustedHost must be
     # outermost so the CSRF Origin check and route handlers only ever see a
