@@ -19,11 +19,25 @@
   {% endif %}
 </div>
 
+{% if critic %}
+<div class="banner">
+  <strong>Critic recommends: {{ critic.recommended_strategy }}</strong>
+  <span class="chip">source: {{ critic.source }}</span>
+  <span class="muted small">confidence {{ (critic.confidence * 100) | round(0) | int }}% · the critic may only recommend — it can never reorder scenes or change feasibility; the human 1st AD decides.</span>
+  {% if critic.reasons %}
+  <ul class="small" style="margin:0.4rem 0 0;">
+    {% for reason in critic.reasons %}<li>{{ reason }}</li>{% endfor %}
+  </ul>
+  {% endif %}
+</div>
+{% endif %}
+
 <div class="grid three">
   {% for o in options %}
-  <section class="panel sandbox-card {{ 'is-selected' if o.plan.status == 'proposed' and not published_id }}">
+  <section class="panel sandbox-card {{ 'is-selected' if o.plan.status == 'proposed' and not published_id }} {{ 'critic-pick' if o.critic_pick }}">
     <div class="panel-heading">
       <h3>{{ o.strategy_label }}</h3>
+      {% if o.critic_pick %}<span class="chip info">critic pick</span>{% endif %}
       {% if o.plan.status in ('published', 'published_override') %}
         <span class="chip ok">PUBLISHED</span>
       {% elif o.plan.status == 'proposed' %}

@@ -13,6 +13,7 @@ from fastapi.responses import PlainTextResponse, RedirectResponse
 from starlette.concurrency import run_in_threadpool
 
 from app.agents.editor import FallbackRequired as EditFallback, manual_edit_intent, parse_edit_intents
+from app.agents.critic import recommend as critic_recommend
 from app.agents.intake import FallbackRequired, parse_incident, parse_incident_voice
 from app.agents.narrator import narrate, narrate_plan
 from app.edit_ops import EditError, apply_edits
@@ -751,6 +752,20 @@ def sandbox(request: Request, group_id: str, msg: str = ""):
     published_id = next(
         (p["id"] for p in plans if p["status"].startswith("published")), None
     )
+
+    # Critic recommendation: display-only, computed once per render. It may
+    # only recommend — it can never reorder options or change feasibility.
+    critic = None
+    if len(options) >= 2:
+        recommendation = critic_recommend(options, st.settings, st.store)
+        critic = {
+            "recommended_strategy": recommendation.recommended_strategy,
+            "confidence": recommendation.confidence,
+            "reasons": recommendation.reasons,
+            "source": recommendation.source,
+        }
+        for stats in options:
+            stats["critic_pick"] = stats["strategy"] == recommendation.recommended_strategy
     return st.templates.TemplateResponse(
         request,
         "sandbox.html",
@@ -760,6 +775,7 @@ def sandbox(request: Request, group_id: str, msg: str = ""):
             "recovery_stat": _recovery_stat(plans[0], st.settings),
             "options": options,
             "published_id": published_id,
+            "critic": critic,
             "msg": msg,
         },
     )

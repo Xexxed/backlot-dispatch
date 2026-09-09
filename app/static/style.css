@@ -272,6 +272,7 @@ h3 { margin: 0; font-size: 1rem; }
 }
 .card-actions { margin-top: 14px; display: flex; flex-direction: column; gap: 8px; }
 .sandbox-card.is-selected { border-color: var(--ok); box-shadow: 0 0 0 1px rgba(85, 214, 155, 0.4); }
+.sandbox-card.critic-pick { border-color: var(--accent, #7aa2ff); box-shadow: 0 0 0 1px rgba(122, 162, 255, 0.45); }
 .sandbox-card .responsive td:first-child { color: var(--muted); width: 38%; }
 
 .weather-panel .weather-loc { border-top: 1px solid var(--line); padding-top: 14px; margin-top: 14px; }
