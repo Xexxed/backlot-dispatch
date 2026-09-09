@@ -150,6 +150,7 @@ def dashboard(request: Request, msg: str = ""):
     links_expired = not links_valid(st.token_issued_at, st.settings.token_ttl_hours)
 
     weather_ctx = _weather_context(st, published, base_ctx)
+    exceptions = _exceptions_context(st)
 
     return st.templates.TemplateResponse(
         request,
@@ -169,6 +170,7 @@ def dashboard(request: Request, msg: str = ""):
             "links_expiry_display": links_expiry_display,
             "links_expired": links_expired,
             "weather": weather_ctx,
+            "exceptions": exceptions,
             "msg": msg,
         },
     )
@@ -389,6 +391,14 @@ class _NullStep:
     verdict = ""
     summary = ""
     status = "ok"
+
+
+def _person_for_subject(production, subject_id: str):
+    """Resolve a crew-or-cast subject id to its person record (or None)."""
+    member = next((m for m in production.crew if m.id == subject_id), None)
+    if member is not None:
+        return member
+    return production.cast.get(subject_id)
 
 
 # ~5 minutes of 16 kHz 16-bit mono WAV; the client widget caps recording at
@@ -971,4 +981,70 @@ def department_view(request: Request, dept_name: str):
         request,
         "department.html",
         {"dept": dept_name, "members": members, "published": published},
+    )
+
+
+# ------------------------------------------------------- Exceptions queue
+def _exceptions_context(st) -> list[dict]:
+    """Unhandled crew replies for the dashboard queue (critical-first)."""
+    out = []
+    for r in st.store.unhandled_responses():
+        person = _person_for_subject(st.production, r["subject_id"])
+        recoverable = bool(r["critical"]) and (
+            r["kind"] == "cannot_make" or (r["eta_minutes"] or 0) > 30
+        )
+        out.append(
+            {
+                **r,
+                "name": getattr(person, "name", r["subject_id"]),
+                "department": getattr(person, "department", "Cast"),
+                "role": getattr(person, "role", getattr(person, "character", "")),
+                "recoverable": recoverable,
+            }
+        )
+    return out
+
+
+@router.post("/responses/{response_id}/handle")
+async def handle_response(request: Request, response_id: str):
+    st = request.app.state
+    if st.store.get_response(response_id) is None:
+        return PlainTextResponse("Unknown response.", status_code=404)
+    st.store.mark_response_handled(response_id)
+    return RedirectResponse("/?msg=Response+marked+handled", status_code=303)
+
+
+@router.post("/responses/{response_id}/recover")
+async def recover_from_response(request: Request, response_id: str):
+    """One-click 'generate recovery options': file a CAST_DELAY incident for
+    a critical-role reply through the standard pipeline — the sentinel/
+    responder path can only FILE incidents, never mutate plans directly."""
+    t0 = time.perf_counter()
+    st = request.app.state
+    response = st.store.get_response(response_id)
+    if response is None:
+        return PlainTextResponse("Unknown response.", status_code=404)
+    person = _person_for_subject(st.production, response["subject_id"])
+    name = getattr(person, "name", response["subject_id"])
+    if response["kind"] == "cannot_make":
+        detail = f"cannot make the call ({response['leave_by'] or 'time unstated'})"
+    elif response["eta_minutes"]:
+        detail = f"running {response['eta_minutes']} minutes late"
+    else:
+        detail = "reported a delay"
+    incident = Incident(
+        type="CAST_DELAY",
+        unit=name,
+        severity="high" if response["critical"] else "medium",
+        free_text=f"{name} {detail}",
+        confidence=1.0,
+        source="responder",
+    )
+    published = st.store.latest_published_plan()
+    completed_ids = list(published.get("completed_scene_ids") or []) if published else []
+    now_minutes = _now_minutes(None, st.settings)
+    recorder = RunRecorder(st.store, "recovery_options").start()
+    st.store.mark_response_handled(response_id)
+    return _incident_pipeline_response(
+        st, incident, completed_ids, now_minutes, t0, recorder
     )

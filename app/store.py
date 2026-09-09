@@ -72,6 +72,19 @@ CREATE TABLE IF NOT EXISTS agent_steps (
     summary TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS idx_agent_steps_run ON agent_steps (run_id, seq);
+CREATE TABLE IF NOT EXISTS responses (
+    id TEXT PRIMARY KEY,
+    plan_id TEXT NOT NULL,
+    token TEXT NOT NULL,
+    subject_id TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    eta_minutes INTEGER,
+    leave_by TEXT,
+    free_text TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL,
+    critical INTEGER NOT NULL DEFAULT 0,
+    handled INTEGER NOT NULL DEFAULT 0
+);
 """
 
 
@@ -365,3 +378,60 @@ class Store:
                 "SELECT * FROM agent_runs WHERE id = ?", (run_id,)
             ).fetchone()
         return dict(row) if row else None
+
+    # ----------------------------------------------------------- responses
+    def save_response(
+        self,
+        response_id: str,
+        plan_id: str,
+        token: str,
+        subject_id: str,
+        kind: str,
+        eta_minutes: int | None,
+        leave_by: str | None,
+        free_text: str,
+        critical: bool,
+    ) -> None:
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO responses (id, plan_id, token, subject_id, kind, "
+                "eta_minutes, leave_by, free_text, created_at, critical, handled) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,0)",
+                (
+                    response_id,
+                    plan_id,
+                    token,
+                    subject_id,
+                    kind,
+                    eta_minutes,
+                    leave_by,
+                    free_text,
+                    utc_now_iso(),
+                    int(critical),
+                ),
+            )
+            self._conn.commit()
+
+    def unhandled_responses(self, limit: int = 50) -> list[dict]:
+        """Open crew replies, critical-first, newest first within a class."""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM responses WHERE handled = 0 "
+                "ORDER BY critical DESC, created_at DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def get_response(self, response_id: str) -> dict | None:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT * FROM responses WHERE id = ?", (response_id,)
+            ).fetchone()
+        return dict(row) if row else None
+
+    def mark_response_handled(self, response_id: str) -> None:
+        with self._lock:
+            self._conn.execute(
+                "UPDATE responses SET handled = 1 WHERE id = ?", (response_id,)
+            )
+            self._conn.commit()

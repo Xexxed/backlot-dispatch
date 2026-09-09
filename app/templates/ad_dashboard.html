@@ -132,6 +132,34 @@
 </div>
 {% endif %}
 
+{% if exceptions %}
+<div class="section-heading"><h2>Exceptions queue <span class="muted small">(unhandled crew replies)</span></h2></div>
+<div class="panel">
+  {% for r in exceptions %}
+  <div class="banner {{ 'warn' if r.critical else '' }}" style="align-items:center;">
+    <div>
+      <strong>{{ r.name }}</strong> <span class="muted small">{{ r.department }}{% if r.role %} · {{ r.role }}{% endif %}</span>
+      {% if r.critical %}<span class="chip err">critical role</span>{% endif %}
+      <span class="chip">{{ r.kind }}</span>
+      {% if r.eta_minutes %}<span class="small">+{{ r.eta_minutes }} min</span>{% endif %}
+      {% if r.leave_by %}<span class="small">by {{ r.leave_by }}</span>{% endif %}
+      {% if r.kind == 'ack' %}<span class="small muted">confirmed seeing the plan</span>{% endif %}
+    </div>
+    <div style="display:flex; gap:8px;">
+      <form method="post" action="/responses/{{ r.id }}/handle" style="display:inline;">
+        <button class="btn secondary small" type="submit">Mark handled</button>
+      </form>
+      {% if r.recoverable %}
+      <form method="post" action="/responses/{{ r.id }}/recover" style="display:inline;">
+        <button class="btn small" type="submit">Generate recovery options →</button>
+      </form>
+      {% endif %}
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
 <div class="section-heading">
   <h2>Crew &amp; cast call times</h2>
   <form method="post" action="/links/rotate" style="display:inline;"

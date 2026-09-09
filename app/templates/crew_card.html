@@ -48,11 +48,42 @@
   <form method="post" action="/c/{{ token }}/ack">
     <button class="btn" type="submit">I've seen this ✔</button>
   </form>
-  {% endif %}
-  {% if not acked %}
-   <p class="small muted">
+  <p class="small muted">
     Or show this QR at the truck: <img class="qr" src="/static/qr/{{ token }}.svg" alt="QR code to open this page"></p>
   {% endif %}
+</section>
+
+<section class="panel">
+  <div class="section-heading"><h2>Can't make it, or running late?</h2></div>
+  <p class="muted small">Tell the AD directly — your reply lands on their dashboard instantly. The system stores the time fact; it does not keep your story.</p>
+  {% include "_voice_widget.html" %}
+  <form method="post" action="/c/{{ token }}/reply">
+    <label for="free_text">Or type your reply</label>
+    <textarea id="free_text" name="free_text" rows="2"
+      placeholder='e.g. "Stuck in traffic, 30 minutes out" or "Cannot make the 13:00 call"'></textarea>
+    <details>
+      <summary>Quick reply (works without the agent)</summary>
+      <div class="grid two">
+        <div>
+          <label>Kind</label>
+          <select name="manual_kind">
+            <option value="">— let the agent read my text —</option>
+            <option value="ack">I've seen it (ack)</option>
+            <option value="running_late">Running late</option>
+            <option value="cannot_make">Cannot make it</option>
+            <option value="question">Question</option>
+          </select>
+          <label>Running late by (minutes)</label>
+          <input type="number" name="manual_eta_minutes" min="0" max="600">
+        </div>
+        <div>
+          <label>Can arrive by / leave by (HH:MM)</label>
+          <input type="time" name="manual_leave_by">
+        </div>
+      </div>
+    </details>
+    <div class="form-actions"><button class="btn" type="submit">Send reply →</button></div>
+  </form>
 </section>
 {% endif %}
 {% endblock %}

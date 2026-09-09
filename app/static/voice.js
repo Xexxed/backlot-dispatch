@@ -73,10 +73,10 @@
     }
   }
 
-  function submitWav(blob, hostForm) {
+  function submitWav(blob, hostForm, action) {
     var form = document.createElement("form");
     form.method = "post";
-    form.action = "/incident/voice";
+    form.action = action || "/incident/voice";
     form.enctype = "multipart/form-data";
     form.hidden = true;
     var input = document.createElement("input");
@@ -148,7 +148,11 @@
       button.textContent = "Processing…";
       status.textContent = "Transcribing and extracting the incident — this takes a few seconds.";
       try {
-        submitWav(new Blob([encodeWav(samples)], { type: "audio/wav" }), hostForm);
+        submitWav(
+          new Blob([encodeWav(samples)], { type: "audio/wav" }),
+          hostForm,
+          widget.getAttribute("data-voice-action") || "/incident/voice"
+        );
       } catch (err) {
         submitting = false;
         hint("Could not submit the recording — type the report instead.");
